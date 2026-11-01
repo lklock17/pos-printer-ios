@@ -81,3 +81,4 @@ public struct ImageHelper {
         return resized ?? image
     }
 }
+

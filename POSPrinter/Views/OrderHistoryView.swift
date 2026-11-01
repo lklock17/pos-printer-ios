@@ -88,14 +88,12 @@ struct OrderHistoryView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("Ringkasan Hari Ini")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
                 Spacer()
                 Text("\(dataManager.todayOrders.count) Transaksi")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.blue)
             }
 
@@ -235,7 +233,7 @@ struct OrderDetailSheet: View {
                             .foregroundColor(.secondary)
                         Spacer()
                         Text(order.invoiceNumber)
-                            .fontWeight(.bold)
+                            .bold()
                     }
                     HStack {
                         Text("Waktu:")
@@ -249,7 +247,7 @@ struct OrderDetailSheet: View {
                         Spacer()
                         Text(order.orderType.rawValue)
                             .foregroundColor(order.orderType == .shipping ? .orange : .blue)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 14, weight: .semibold))
                     }
                 }
 
@@ -258,16 +256,14 @@ struct OrderDetailSheet: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.product.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                                    .font(.system(size: 15, weight: .medium))
                                 Text("\(item.quantity) x \(CurrencyHelper.format(item.product.price))")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
                             Text(CurrencyHelper.format(item.subtotal))
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 15, weight: .semibold))
                         }
                     }
                 }
@@ -298,7 +294,7 @@ struct OrderDetailSheet: View {
                     }
                     HStack {
                         Text("Total Pembayaran:")
-                            .fontWeight(.bold)
+                            .bold()
                         Spacer()
                         Text(order.formattedTotal)
                             .font(.headline)
@@ -322,7 +318,7 @@ struct OrderDetailSheet: View {
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text(CurrencyHelper.format(order.change))
-                                .fontWeight(.bold)
+                                .bold()
                                 .foregroundColor(.green)
                         }
                     }
@@ -335,15 +331,14 @@ struct OrderDetailSheet: View {
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text("\(ship.courier) (\(ship.service))")
-                                .fontWeight(.semibold)
+                                .font(.system(size: 14, weight: .semibold))
                         }
                         HStack {
                             Text("No. Resi:")
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text(ship.trackingNumber)
-                                .font(.system(.body, design: .monospaced))
-                                .fontWeight(.bold)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
                         }
                         HStack {
                             Text("Penerima:")
@@ -364,7 +359,7 @@ struct OrderDetailSheet: View {
                                     .foregroundColor(.red)
                                 Spacer()
                                 Text(CurrencyHelper.format(ship.codAmount))
-                                    .fontWeight(.bold)
+                                    .bold()
                                     .foregroundColor(.red)
                             }
                         }
@@ -376,7 +371,7 @@ struct OrderDetailSheet: View {
                         HStack {
                             Image(systemName: "printer.fill")
                             Text("Cetak Ulang Struk Thermal (Auto-Cut)")
-                                .fontWeight(.bold)
+                                .bold()
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -386,7 +381,7 @@ struct OrderDetailSheet: View {
                             HStack {
                                 Image(systemName: "shippingbox.fill")
                                 Text("Cetak Ulang Label 4x6 (TSPL)")
-                                    .fontWeight(.bold)
+                                    .bold()
                             }
                             .foregroundColor(.orange)
                             .frame(maxWidth: .infinity)
@@ -406,3 +401,4 @@ struct OrderDetailSheet: View {
         }
     }
 }
+

@@ -69,8 +69,7 @@ struct ProductManagementView: View {
                         ForEach(dataManager.categories, id: \.self) { cat in
                             Button(action: { selectedCategory = cat }) {
                                 Text(cat)
-                                    .font(.subheadline)
-                                    .fontWeight(selectedCategory == cat ? .bold : .regular)
+                                    .font(.system(size: 13, weight: selectedCategory == cat ? .bold : .regular))
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 6)
                                     .background(selectedCategory == cat ? Color.blue : Color(UIColor.secondarySystemBackground))
@@ -258,8 +257,7 @@ struct ProductRowItem: View {
         Group {
             if product.isOutOfStock {
                 Text("Habis")
-                    .font(.caption2)
-                    .fontWeight(.bold)
+                    .font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.red.opacity(0.15))
@@ -267,8 +265,7 @@ struct ProductRowItem: View {
                     .clipShape(Capsule())
             } else if product.isLowStock {
                 Text("Sisa \(product.stock) \(product.unit)")
-                    .font(.caption2)
-                    .fontWeight(.bold)
+                    .font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.orange.opacity(0.15))
@@ -286,3 +283,4 @@ struct ProductRowItem: View {
         }
     }
 }
+

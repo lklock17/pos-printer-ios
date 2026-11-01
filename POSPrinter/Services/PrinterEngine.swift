@@ -249,3 +249,4 @@ public class PrinterEngine {
         return text.data(using: stringEncoding) ?? text.data(using: .ascii) ?? Data()
     }
 }
+

@@ -46,3 +46,4 @@ public struct ShippingInfo: Codable, Equatable {
         self.notes = notes
     }
 }
+

@@ -78,8 +78,7 @@ struct ProductFormView: View {
                             Button(action: { showImageActionSheet = true }) {
                                 Label(selectedImage == nil ? "Pilih / Ambil Foto" : "Ganti Foto",
                                       systemImage: "camera.fill")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                                    .font(.system(size: 14, weight: .medium))
                             }
 
                             if selectedImage != nil {
@@ -178,8 +177,7 @@ struct ProductFormView: View {
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(CurrencyHelper.format(profitNominal)) / \(unit)")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.green)
                                 Text(String(format: "Margin: %.1f%%", profitMarginPercentage))
                                     .font(.caption2)
@@ -330,3 +328,4 @@ struct ProductFormView: View {
         presentationMode.wrappedValue.dismiss()
     }
 }
+

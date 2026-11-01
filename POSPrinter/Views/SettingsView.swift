@@ -127,8 +127,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         Spacer()
                         Text("4x6 Inci (100 x 150 mm) TSPL")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                            .font(.system(size: 14, weight: .medium))
                     }
                     HStack {
                         Text("Kompatibilitas:")
@@ -201,7 +200,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         Spacer()
                         Text("OmniPOS Universal")
-                            .fontWeight(.bold)
+                            .bold()
                     }
                     HStack {
                         Text("Versi:")

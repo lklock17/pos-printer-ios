@@ -74,3 +74,4 @@ public struct CurrencyHelper {
         return formatter.string(from: NSNumber(value: amount)) ?? "\(Int(amount))"
     }
 }
+

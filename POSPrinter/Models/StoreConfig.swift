@@ -54,3 +54,4 @@ public struct StoreConfig: Codable, Equatable {
         self.labelHeightInch = labelHeightInch
     }
 }
+

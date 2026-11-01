@@ -142,8 +142,7 @@ struct ShippingLabelView: View {
                         }) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(order.shippingInfo?.trackingNumber ?? order.invoiceNumber)
-                                    .font(.caption)
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 12, weight: .bold))
                                 Text("\(order.shippingInfo?.courier ?? "Kurir") • \(order.shippingInfo?.recipientName ?? "")")
                                     .font(.caption2)
                             }
@@ -370,8 +369,7 @@ struct ShippingLabelView: View {
                     Image(systemName: "shippingbox.fill")
                         .font(.headline)
                     Text("Cetak Label 4x6 Thermal (TSPL)")
-                        .font(.headline)
-                        .fontWeight(.bold)
+                        .font(.system(size: 16, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -387,8 +385,7 @@ struct ShippingLabelView: View {
                     Image(systemName: "printer.fill")
                         .font(.subheadline)
                     Text("Cetak Resi ke Struk POS 58/80mm (Auto-Cut)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .foregroundColor(.blue)
                 .frame(maxWidth: .infinity)
@@ -416,8 +413,7 @@ struct ShippingLabelView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Ringkasan Pengiriman")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 14, weight: .bold))
                 Spacer()
                 Button("Ubah") {
                     showEditSheet = true
@@ -522,10 +518,12 @@ struct ShippingLabelView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Selesai") {
+                    Button(action: {
                         showEditSheet = false
+                    }) {
+                        Text("Selesai")
+                            .bold()
                     }
-                    .bold()
                 }
             }
         }
@@ -593,3 +591,4 @@ struct ShippingLabelView: View {
         )
     }
 }
+
