@@ -28,6 +28,7 @@ import com.lklock17.omnipos.models.Product
 import com.lklock17.omnipos.services.BluetoothPrinterManager
 import com.lklock17.omnipos.services.DataManager
 import com.lklock17.omnipos.services.PrinterEngine
+import com.lklock17.omnipos.ui.components.LiquidGlassBackground
 import com.lklock17.omnipos.ui.components.LiquidGlassCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,20 +36,24 @@ import com.lklock17.omnipos.ui.components.LiquidGlassCard
 fun ProductScreen() {
     val context = LocalContext.current
     var searchText by remember { mutableStateOf("") }
+    var stockFilter by remember { mutableStateOf(0) } // 0: Semua, 1: Menipis, 2: Habis
     var showAddDialog by remember { mutableStateOf(false) }
     var productToEdit by remember { mutableStateOf<Product?>(null) }
     var productToDelete by remember { mutableStateOf<Product?>(null) }
     var productToPrintBarcode by remember { mutableStateOf<Product?>(null) }
 
-    val filteredProducts = remember(searchText, DataManager.products.size) {
-        if (searchText.isBlank()) {
-            DataManager.products.toList()
-        } else {
-            DataManager.products.filter {
-                it.name.contains(searchText, ignoreCase = true) ||
-                it.sku.contains(searchText, ignoreCase = true) ||
-                it.barcode.contains(searchText)
+    val filteredProducts = remember(searchText, stockFilter, DataManager.products.size) {
+        DataManager.products.filter { p ->
+            val matchQuery = searchText.isBlank() ||
+                p.name.contains(searchText, ignoreCase = true) ||
+                p.sku.contains(searchText, ignoreCase = true) ||
+                p.barcode.contains(searchText)
+            val matchStock = when (stockFilter) {
+                1 -> p.isLowStock && p.stock > 0
+                2 -> p.stock <= 0
+                else -> true
             }
+            matchQuery && matchStock
         }
     }
 
@@ -61,50 +66,89 @@ fun ProductScreen() {
                         Icon(Icons.Default.AddCircle, contentDescription = "Tambah Produk", tint = Color(0xFF38BDF8))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0A0E1A))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0x330F1424))
             )
         },
-        containerColor = Color(0xFF0A0E1A)
+        containerColor = Color(0xFF0F1424)
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-        ) {
-            // Search Bar
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = { searchText = it },
+        LiquidGlassBackground(modifier = Modifier.padding(padding)) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                placeholder = { Text("Cari produk berdasarkan nama / SKU...", color = Color.Gray) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0x1AFFFFFF),
-                    unfocusedContainerColor = Color(0x0EFFFFFF)
-                )
-            )
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
             ) {
-                items(filteredProducts, key = { it.id }) { product ->
-                    ProductManagementRow(
-                        product = product,
-                        onAdjustStock = { delta ->
-                            DataManager.adjustStock(product.id, delta, context)
-                        },
-                        onPrintBarcode = { productToPrintBarcode = product },
-                        onEdit = { productToEdit = product },
-                        onDelete = { productToDelete = product }
+                // Search Bar
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    placeholder = { Text("Cari produk berdasarkan nama / SKU...", color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8)) },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0x18FFFFFF),
+                        unfocusedContainerColor = Color(0x10FFFFFF),
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0x28FFFFFF)
                     )
+                )
+
+                // Stock Filter Tabs (Identik dengan iOS Segmented Picker)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val lowCount = DataManager.products.count { it.isLowStock && it.stock > 0 }
+                    val outCount = DataManager.products.count { it.stock <= 0 }
+                    val tabs = listOf(
+                        "Semua (${DataManager.products.size})",
+                        "Menipis ($lowCount)",
+                        "Habis ($outCount)"
+                    )
+                    tabs.forEachIndexed { index, label ->
+                        val isSelected = stockFilter == index
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color(0xFF2563EB) else Color(0x1AFFFFFF))
+                                .border(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0x20FFFFFF), RoundedCornerShape(10.dp))
+                                .clickable { stockFilter = index }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFFCCCCCC)
+                            )
+                        }
+                    }
+                }
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(filteredProducts, key = { it.id }) { product ->
+                        ProductManagementRow(
+                            product = product,
+                            onAdjustStock = { delta ->
+                                DataManager.adjustStock(product.id, delta, context)
+                            },
+                            onPrintBarcode = { productToPrintBarcode = product },
+                            onEdit = { productToEdit = product },
+                            onDelete = { productToDelete = product }
+                        )
+                    }
                 }
             }
         }
@@ -192,9 +236,25 @@ private fun ProductManagementRow(
     LiquidGlassCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // Thumbnail Category Icon (Matching iOS)
+            Surface(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                color = Color(0x2EFFFFFF)
+            ) {
+                Icon(
+                    imageVector = productCategoryIcon(product.category),
+                    contentDescription = null,
+                    tint = Color(0xFF38BDF8),
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = product.name,
@@ -203,31 +263,59 @@ private fun ProductManagementRow(
                     color = Color.White
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Harga: ${Order.formatRupiah(product.price)} • Modal: ${Order.formatRupiah(product.costPrice)}",
-                    fontSize = 12.sp,
-                    color = Color(0xFF38BDF8)
-                )
-                if (product.sku.isNotEmpty() || product.barcode.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Color(0x332563EB),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = product.category,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "SKU: ${product.sku.ifEmpty { "-" }} | Barcode: ${product.barcode.ifEmpty { "-" }}",
+                        text = "SKU: ${product.sku.ifEmpty { "-" }}",
                         fontSize = 11.sp,
                         color = Color.Gray
                     )
                 }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = Order.formatRupiah(product.price),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onPrintBarcode) {
-                    Icon(Icons.Default.Print, contentDescription = "Cetak Barcode", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Tombol Cetak Barcode Stiker
+                FilledIconButton(
+                    onClick = onPrintBarcode,
+                    modifier = Modifier.size(34.dp),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x3310B981))
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = "Cetak Barcode", tint = Color(0xFF10B981), modifier = Modifier.size(17.dp))
                 }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+
+                // Tombol Edit
+                FilledIconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(34.dp),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x3338BDF8))
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Divider(color = Color(0x22FFFFFF))
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -238,31 +326,22 @@ private fun ProductManagementRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Stok: ${product.stock} ${product.unit}",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (product.isLowStock) Color(0xFFEF4444) else Color(0xFF10B981)
-                )
-                if (product.isLowStock) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        color = Color(0x33EF4444),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = "STOK MENIPIS",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFEF4444),
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
+                Surface(
+                    color = if (product.isLowStock) Color(0x33EF4444) else Color(0x3310B981),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "Stok: ${product.stock} ${product.unit}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (product.isLowStock) Color(0xFFEF4444) else Color(0xFF10B981),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                 }
             }
 
             // Quick - / + buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = { onAdjustStock(-1) },
                     modifier = Modifier.size(28.dp).clip(CircleShape).background(Color(0x33FFFFFF))
@@ -285,6 +364,18 @@ private fun ProductManagementRow(
                 }
             }
         }
+    }
+}
+
+private fun productCategoryIcon(category: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (category.lowercase()) {
+        "makanan" -> Icons.Default.Restaurant
+        "minuman" -> Icons.Default.LocalCafe
+        "snack" -> Icons.Default.Fastfood
+        "pakaian" -> Icons.Default.Checkroom
+        "elektronik" -> Icons.Default.Devices
+        "aksesoris" -> Icons.Default.Watch
+        else -> Icons.Default.Inventory2
     }
 }
 
