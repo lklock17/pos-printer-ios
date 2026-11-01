@@ -483,10 +483,6 @@ fun ShippingLabelScreen() {
                 ) {
                     Text("Ya, Cetak Sekarang", fontWeight = FontWeight.Bold)
                 }
-            }
-        )
-    }
-                }
             },
             dismissButton = {
                 TextButton(onClick = { showPrintConfirmDialog = false }) {
