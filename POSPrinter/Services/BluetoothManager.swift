@@ -22,6 +22,12 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     private var targetPeripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
 
+    // Keep-Alive & Auto-Reconnect Settings
+    private let lastConnectedUUIDKey = "omnipos_last_connected_printer_uuid"
+    private var keepAliveTimer: Timer?
+    private var autoReconnectTimer: Timer?
+    private var isManualDisconnect = false
+
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -45,26 +51,122 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     func connect(to printer: DiscoveredPrinter) {
+        isManualDisconnect = false
         stopScan()
         targetPeripheral = printer.peripheral
         targetPeripheral?.delegate = self
+        UserDefaults.standard.set(printer.id.uuidString, forKey: lastConnectedUUIDKey)
         statusMessage = "Menghubungkan ke \(printer.name)..."
-        centralManager.connect(printer.peripheral, options: nil)
+        centralManager.connect(printer.peripheral, options: [
+            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
+        ])
     }
 
     func disconnect() {
+        isManualDisconnect = true
+        stopAutoReconnect()
+        stopKeepAlive()
+        UserDefaults.standard.removeObject(forKey: lastConnectedUUIDKey)
         if let peripheral = targetPeripheral {
             centralManager.cancelPeripheralConnection(peripheral)
         }
+    }
+
+    // MARK: - Keep-Alive Heartbeat (Mencegah Firmware Printer Auto-Sleep / Auto-Disconnect)
+    private func startKeepAlive() {
+        stopKeepAlive()
+        DispatchQueue.main.async {
+            // Kirim status query setiap 15 detik agar koneksi Bluetooth printer tetap ON terus
+            self.keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+                guard let self = self, self.isConnected, let char = self.writeCharacteristic, let peripheral = self.targetPeripheral else { return }
+                // ESC/POS DLE EOT 1 status query (tidak menghasilkan cetakan kertas, menjaga link aktif)
+                let ping = Data([0x10, 0x04, 0x01])
+                let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+                peripheral.writeValue(ping, for: char, type: writeType)
+            }
+        }
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = nil
+    }
+
+    // MARK: - Auto-Reconnect (Sambung Ulang Otomatis Jika Terputus)
+    private func startAutoReconnect() {
+        guard !isManualDisconnect else { return }
+        stopAutoReconnect()
+
+        DispatchQueue.main.async {
+            self.autoReconnectTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                if self.isConnected {
+                    self.stopAutoReconnect()
+                    return
+                }
+
+                // 1. Coba sambung ulang ke peripheral yang tersimpan
+                if let target = self.targetPeripheral {
+                    self.statusMessage = "Menyambung ulang otomatis ke \(target.name ?? "Printer")..."
+                    self.centralManager.connect(target, options: [
+                        CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
+                    ])
+                    return
+                }
+
+                // 2. Cari dari UUID yang pernah terhubung
+                if let savedIdString = UserDefaults.standard.string(forKey: self.lastConnectedUUIDKey),
+                   let savedUUID = UUID(uuidString: savedIdString) {
+                    let known = self.centralManager.retrievePeripherals(withIdentifiers: [savedUUID])
+                    if let first = known.first {
+                        self.targetPeripheral = first
+                        self.targetPeripheral?.delegate = self
+                        self.statusMessage = "Menyambung ulang otomatis..."
+                        self.centralManager.connect(first, options: [
+                            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
+                        ])
+                        return
+                    }
+                }
+
+                // 3. Scan ulang jika peripheral belum ditemukan
+                if !self.isScanning {
+                    self.startScan()
+                }
+            }
+        }
+    }
+
+    private func stopAutoReconnect() {
+        autoReconnectTimer?.invalidate()
+        autoReconnectTimer = nil
     }
 
     // MARK: - CBCentralManagerDelegate
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         isBluetoothPoweredOn = (central.state == .poweredOn)
         if central.state == .poweredOn {
-            statusMessage = "Bluetooth Aktif. Siap scan printer."
+            statusMessage = "Bluetooth Aktif."
+
+            // Auto-Connect ke printer terakhir yang pernah terhubung
+            if let savedIdString = UserDefaults.standard.string(forKey: lastConnectedUUIDKey),
+               let savedUUID = UUID(uuidString: savedIdString) {
+                let known = centralManager.retrievePeripherals(withIdentifiers: [savedUUID])
+                if let lastPrinter = known.first {
+                    targetPeripheral = lastPrinter
+                    targetPeripheral?.delegate = self
+                    statusMessage = "Menyambung otomatis ke \(lastPrinter.name ?? "Printer")..."
+                    centralManager.connect(lastPrinter, options: [
+                        CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
+                    ])
+                    return
+                }
+            }
+
             startScan()
         } else {
+            stopKeepAlive()
+            stopAutoReconnect()
             statusMessage = "Bluetooth tidak aktif / tidak diizinkan."
             isConnected = false
             connectedPrinterName = "Belum Terhubung"
@@ -73,22 +175,32 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Printer Bluetooth"
-        
+
         let newPrinter = DiscoveredPrinter(id: peripheral.identifier, name: name, peripheral: peripheral, rssi: RSSI.intValue)
         if !discoveredPrinters.contains(where: { $0.id == peripheral.identifier }) {
             DispatchQueue.main.async {
                 self.discoveredPrinters.append(newPrinter)
             }
         }
+
+        // Auto-connect jika menemukan device yang cocok dengan ID tersimpan
+        if let savedId = UserDefaults.standard.string(forKey: lastConnectedUUIDKey),
+           savedId == peripheral.identifier.uuidString,
+           !isConnected {
+            connect(to: newPrinter)
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        stopAutoReconnect()
         DispatchQueue.main.async {
             self.isConnected = true
-            self.connectedPrinterName = peripheral.name ?? "Kassen Printer"
-            self.statusMessage = "Terhubung ke \(self.connectedPrinterName)"
+            self.connectedPrinterName = peripheral.name ?? "Printer Thermal"
+            self.statusMessage = "Terhubung ke \(self.connectedPrinterName) (Selalu Aktif)"
         }
+        UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: lastConnectedUUIDKey)
         peripheral.discoverServices(nil)
+        startKeepAlive()
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -96,14 +208,23 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             self.isConnected = false
             self.statusMessage = "Gagal terhubung: \(error?.localizedDescription ?? "Error")"
         }
+        if !isManualDisconnect {
+            startAutoReconnect()
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        stopKeepAlive()
         DispatchQueue.main.async {
             self.isConnected = false
             self.connectedPrinterName = "Belum Terhubung"
             self.writeCharacteristic = nil
-            self.statusMessage = "Koneksi printer terputus."
+            if self.isManualDisconnect {
+                self.statusMessage = "Koneksi printer diputuskan."
+            } else {
+                self.statusMessage = "Koneksi printer terputus. Mencoba menyambung kembali otomatis..."
+                self.startAutoReconnect()
+            }
         }
     }
 
@@ -122,14 +243,14 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             if char.properties.contains(.write) || char.properties.contains(.writeWithoutResponse) {
                 self.writeCharacteristic = char
                 DispatchQueue.main.async {
-                    self.statusMessage = "Printer siap menerima cetakan!"
+                    self.statusMessage = "Printer siap menerima cetakan (Selalu Aktif)!"
                 }
                 break
             }
         }
     }
 
-    // MARK: - Kirim Data ESC/POS dengan Chunking (Cegah Paket Dropped di BLE)
+    // MARK: - Kirim Data ESC/POS & TSPL
     func sendData(_ data: Data, completion: ((Bool) -> Void)? = nil) {
         guard let peripheral = targetPeripheral, let char = writeCharacteristic else {
             statusMessage = "Printer belum terhubung atau karakteristik tidak ditemukan."
@@ -151,17 +272,9 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             }
 
             DispatchQueue.main.async {
-                self.statusMessage = "Data cetak dan auto-cut terkirim!"
+                self.statusMessage = "Data cetak berhasil dikirim! (Koneksi Tetap ON)"
                 completion?(true)
-
-                // Jeda 2.5 detik lalu lepas koneksi agar komputer Windows bisa langsung mencetak
-                let autoDisconnect = UserDefaults.standard.object(forKey: "AutoDisconnect_Key") == nil ? true : UserDefaults.standard.bool(forKey: "AutoDisconnect_Key")
-                if autoDisconnect {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                        self.disconnect()
-                        self.statusMessage = "Bluetooth dilepas otomatis (Komputer & iOS siap cetak)"
-                    }
-                }
+                // KONEKSI TETAP AKTIF TERUS (TIDAK ADA AUTO-DISCONNECT)
             }
         }
     }

@@ -95,7 +95,7 @@ fun SettingsScreen() {
 
                     if (BluetoothPrinterManager.isConnected.value) {
                         Button(
-                            onClick = { BluetoothPrinterManager.disconnect() },
+                            onClick = { BluetoothPrinterManager.disconnect(context) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
                         ) {
                             Text("Putuskan", fontSize = 11.sp)
@@ -125,7 +125,7 @@ fun SettingsScreen() {
                     } else {
                         BluetoothPrinterManager.pairedDevices.forEach { dev ->
                             DeviceRowItem(device = dev) {
-                                BluetoothPrinterManager.connectToDevice(dev) { ok, err ->
+                                BluetoothPrinterManager.connectToDevice(dev, context) { ok, err ->
                                     Toast.makeText(context, if (ok) "Terhubung ke ${dev.name}!" else err ?: "Gagal terhubung.", Toast.LENGTH_SHORT).show()
                                 }
                             }
