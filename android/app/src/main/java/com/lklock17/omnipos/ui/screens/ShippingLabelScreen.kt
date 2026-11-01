@@ -652,7 +652,7 @@ private fun BarcodeLines(height: Int) {
 }
 
 @Composable
-private fun ShippingEditDialog(
+fun ShippingEditDialog(
     active: ShippingInfo,
     onDismiss: () -> Unit,
     onSave: (ShippingInfo) -> Unit
