@@ -477,7 +477,7 @@ public class PrinterEngine {
 
         // 2. Nama Toko (y=14)
         let storeUpper = (storeName.isEmpty ? "OMNIPOS STORE" : storeName).uppercased()
-        let storeFont = UIFont.boldSystemFont(ofSize: 15)
+        let storeFont = UIFont.systemFont(ofSize: 15, weight: .heavy)
         let storeAttrs: [NSAttributedString.Key: Any] = [
             .font: storeFont,
             .foregroundColor: UIColor.black
@@ -486,16 +486,16 @@ public class PrinterEngine {
         let storeRect = CGRect(x: (CGFloat(width) - storeSize.width) / 2, y: 14, width: storeSize.width, height: storeSize.height)
         storeUpper.draw(in: storeRect, withAttributes: storeAttrs)
 
-        // Divider Line 1 (y=34)
+        // Divider Line 1 (y=34) - Tebal 2 dot
         ctx.setStrokeColor(UIColor.black.cgColor)
-        ctx.setLineWidth(1)
+        ctx.setLineWidth(2)
         ctx.move(to: CGPoint(x: 10, y: 34))
         ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 34))
         ctx.strokePath()
 
-        // 3. Nama Produk (y=38)
+        // 3. Nama Produk (y=38) - Tebal Heavy
         let dispName = String(productName.prefix(24))
-        let prodFont = UIFont.boldSystemFont(ofSize: 18)
+        let prodFont = UIFont.systemFont(ofSize: 18, weight: .heavy)
         let prodAttrs: [NSAttributedString.Key: Any] = [
             .font: prodFont,
             .foregroundColor: UIColor.black
@@ -504,7 +504,7 @@ public class PrinterEngine {
         let prodRect = CGRect(x: (CGFloat(width) - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height)
         dispName.draw(in: prodRect, withAttributes: prodAttrs)
 
-        // 4. Barcode Code 128 (y=64, h=44)
+        // 4. Barcode Code 128 (y=64, h=48)
         let cleanBc = barcode.filter { $0.asciiValue != nil && $0.asciiValue! >= 32 && $0.asciiValue! <= 126 }
         let finalBc = cleanBc.isEmpty ? "00000000" : cleanBc
         var codes: [Int] = [104] // Start B
@@ -535,42 +535,43 @@ public class PrinterEngine {
         let startX = max(10, (CGFloat(width) - barTotalW) / 2)
         var curX = startX
         let barY: CGFloat = 64
-        let barH: CGFloat = 44
+        let barH: CGFloat = 48
 
         ctx.setFillColor(UIColor.black.cgColor)
         for (idx, char) in pattern.enumerated() {
             let w = CGFloat(Int(String(char)) ?? 1) * moduleW
             if idx % 2 == 0 {
-                ctx.fill(CGRect(x: curX, y: barY, width: w, height: barH))
+                // Tambahkan ekstra 0.5 dot agar baris barcode hitam pekat dan tebal
+                ctx.fill(CGRect(x: curX, y: barY, width: w + 0.5, height: barH))
             }
             curX += w
         }
 
-        // 5. Barcode Teks (y=112)
-        let codeFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+        // 5. Barcode Teks (y=114) - Tebal Monospaced Heavy
+        let codeFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .heavy)
         let codeAttrs: [NSAttributedString.Key: Any] = [
             .font: codeFont,
             .foregroundColor: UIColor.black
         ]
         let codeSize = finalBc.size(withAttributes: codeAttrs)
-        let codeRect = CGRect(x: (CGFloat(width) - codeSize.width) / 2, y: 112, width: codeSize.width, height: codeSize.height)
+        let codeRect = CGRect(x: (CGFloat(width) - codeSize.width) / 2, y: 114, width: codeSize.width, height: codeSize.height)
         finalBc.draw(in: codeRect, withAttributes: codeAttrs)
 
-        // Divider Line 2 (y=132)
-        ctx.setStrokeColor(UIColor.black.cgColor)
-        ctx.setLineWidth(1)
-        ctx.move(to: CGPoint(x: 10, y: 132))
-        ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 132))
-        ctx.strokePath()
-
-        // 6. Price Box (y=138 s/d 204, height=66)
-        let boxRect = CGRect(x: 14, y: 138, width: CGFloat(width) - 28, height: 66)
+        // Divider Line 2 (y=134) - Tebal 2 dot
         ctx.setStrokeColor(UIColor.black.cgColor)
         ctx.setLineWidth(2)
+        ctx.move(to: CGPoint(x: 10, y: 134))
+        ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 134))
+        ctx.strokePath()
+
+        // 6. Price Box (y=140 s/d 208, height=68) - Border Tebal 3 dot
+        let boxRect = CGRect(x: 14, y: 140, width: CGFloat(width) - 28, height: 68)
+        ctx.setStrokeColor(UIColor.black.cgColor)
+        ctx.setLineWidth(3)
         ctx.stroke(boxRect)
 
         let priceStr = CurrencyHelper.format(price)
-        let priceFont = UIFont.boldSystemFont(ofSize: 26)
+        let priceFont = UIFont.systemFont(ofSize: 28, weight: .heavy)
         let priceAttrs: [NSAttributedString.Key: Any] = [
             .font: priceFont,
             .foregroundColor: UIColor.black
@@ -578,7 +579,7 @@ public class PrinterEngine {
         let priceSize = priceStr.size(withAttributes: priceAttrs)
         let priceRect = CGRect(
             x: (CGFloat(width) - priceSize.width) / 2,
-            y: 138 + (66 - priceSize.height) / 2,
+            y: 140 + (68 - priceSize.height) / 2,
             width: priceSize.width,
             height: priceSize.height
         )
@@ -595,6 +596,14 @@ public class PrinterEngine {
         // Ekstraksi 1-bit ESC/POS Raster (GS v 0) langsung dari pixel CGImage
         let bytesPerRow = 48
         var rasterData = Data()
+
+        // Perintah ESC/POS untuk menaikkan kepadatan & waktu pemanasan kepala thermal (Density & Heat Time Max)
+        // ESC 7 n1 n2 n3: max heating parameter untuk Kassen MT200A / POS-58
+        rasterData.append(contentsOf: [0x1B, 0x37, 0x07, 0xF0, 0x02])
+        // DC2 T: Kepadatan cetak maksimal
+        rasterData.append(contentsOf: [0x12, 0x54])
+
+        // Header GS v 0
         let xL = UInt8(bytesPerRow & 0xFF)
         let xH = UInt8((bytesPerRow >> 8) & 0xFF)
         let yL = UInt8(height & 0xFF)
@@ -610,6 +619,7 @@ public class PrinterEngine {
         let cgBytesPerRow = cgImage.bytesPerRow
         let bytesPerPixel = max(1, cgImage.bitsPerPixel / 8)
 
+        // Konversi ke 1-bit dengan ambang batas (threshold) 210 agar garis anti-aliasing menjadi hitam pekat
         for y in 0..<height {
             let rowOffset = y * cgBytesPerRow
             for byteIdx in 0..<bytesPerRow {
@@ -622,7 +632,8 @@ public class PrinterEngine {
                         let g = Int(rawPtr[pixelOffset + 1])
                         let bCol = Int(rawPtr[pixelOffset + 2])
                         let gray = (r * 299 + g * 587 + bCol * 114) / 1000
-                        if gray < 128 {
+                        // Threshold 210: Menjamin ketebalan maksimal teks dan garis barcode stiker
+                        if gray < 210 {
                             b |= (1 << (7 - bit))
                         }
                     }

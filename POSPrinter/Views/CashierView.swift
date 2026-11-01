@@ -31,6 +31,12 @@ struct CashierView: View {
     @State private var printStatusMsg: String = ""
     @State private var showPrintStatusAlert: Bool = false
 
+    // Scan Popup Flow: "Mau pesan berapa?" & "Sudah atau Tambah Lagi?"
+    @State private var scannedProductForQty: Product? = nil
+    @State private var showPostScanChoiceAlert: Bool = false
+    @State private var lastAddedProductName: String = ""
+    @State private var lastAddedQty: Int = 1
+
     var filteredProducts: [Product] {
         dataManager.products.filter { p in
             let matchCategory = (selectedCategory == "Semua" || p.category == selectedCategory)
@@ -150,11 +156,9 @@ struct CashierView: View {
                         (!$0.barcode.isEmpty && $0.barcode.caseInsensitiveCompare(trimmed) == .orderedSame) ||
                         (!$0.sku.isEmpty && $0.sku.caseInsensitiveCompare(trimmed) == .orderedSame)
                     }) {
-                        addToCart(matched)
-                        scanFeedbackMessage = "+1 \(matched.name)"
-                        showScanFeedbackToast = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            showScanFeedbackToast = false
+                        showBarcodeScannerSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            scannedProductForQty = matched
                         }
                     } else {
                         scanFeedbackMessage = "Barcode \(trimmed) tidak ditemukan"
@@ -164,6 +168,26 @@ struct CashierView: View {
                         }
                     }
                 })
+            }
+            .sheet(item: $scannedProductForQty) { prod in
+                ScanQuantitySheet(product: prod) { qty in
+                    addToCart(prod, quantity: qty)
+                    lastAddedProductName = prod.name
+                    lastAddedQty = qty
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showPostScanChoiceAlert = true
+                    }
+                }
+            }
+            .alert("Produk Berhasil Ditambahkan", isPresented: $showPostScanChoiceAlert) {
+                Button("Tambah Produk Lagi") {
+                    showBarcodeScannerSheet = true
+                }
+                Button("Sudah (Lihat Keranjang)") {
+                    showCartSheet = true
+                }
+            } message: {
+                Text("\(lastAddedQty)x '\(lastAddedProductName)' berhasil dimasukkan ke keranjang belanja.\n\nApakah sudah selesai atau mau tambah produk lagi?")
             }
             .alert("Status Cetak", isPresented: $showPrintStatusAlert) {
                 Button("OK", role: .cancel) { }
@@ -187,10 +211,10 @@ struct CashierView: View {
                             if let matched = dataManager.products.first(where: {
                                 !$0.barcode.isEmpty && $0.barcode.caseInsensitiveCompare(trimmed) == .orderedSame
                             }) {
-                                addToCart(matched)
+                                searchQuery = ""
                                 let generator = UINotificationFeedbackGenerator()
                                 generator.notificationOccurred(.success)
-                                searchQuery = ""
+                                scannedProductForQty = matched
                             }
                         }
                     }
@@ -781,11 +805,11 @@ struct CashierView: View {
     }
 
     // MARK: - Helper Actions
-    private func addToCart(_ product: Product) {
+    private func addToCart(_ product: Product, quantity: Int = 1) {
         if let idx = cart.firstIndex(where: { $0.product.id == product.id }) {
-            cart[idx].quantity += 1
+            cart[idx].quantity += quantity
         } else {
-            cart.append(OrderItem(product: product, quantity: 1))
+            cart.append(OrderItem(product: product, quantity: quantity))
         }
     }
 
@@ -1117,6 +1141,143 @@ class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObj
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             self?.isProcessing = false
+        }
+    }
+}
+
+// MARK: - Scan Quantity Sheet ("Mau pesan berapa?")
+struct ScanQuantitySheet: View {
+    @Environment(\.presentationMode) private var presentationMode
+    let product: Product
+    @State private var quantity: Int = 1
+    var onConfirm: (Int) -> Void
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                LiquidGlassBackground()
+
+                VStack(spacing: 20) {
+                    // Preview Card Produk
+                    HStack(spacing: 14) {
+                        if let b64 = product.imageBase64, let img = ImageHelper.fromBase64(b64) {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        } else {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white.opacity(0.1))
+                                    .frame(width: 60, height: 60)
+                                Image(systemName: "cube.box.fill")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(.cyan)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(product.name)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            Text(product.formattedPrice)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.green)
+                            Text("Stok: \(product.stock) \(product.unit)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(16)
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.18), lineWidth: 1))
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+
+                    Text("Mau pesan berapa?")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    // Stepper (-) [Qty] (+)
+                    HStack(spacing: 24) {
+                        Button(action: { if quantity > 1 { quantity -= 1 } }) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 38))
+                                .foregroundColor(quantity > 1 ? .cyan : .gray)
+                        }
+
+                        Text("\(quantity)")
+                            .font(.system(size: 36, weight: .black))
+                            .foregroundColor(.white)
+                            .frame(minWidth: 50)
+
+                        Button(action: { quantity += 1 }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 38))
+                                .foregroundColor(.cyan)
+                        }
+                    }
+
+                    // Quick Chips (1, 2, 5, 10)
+                    HStack(spacing: 12) {
+                        ForEach([1, 2, 5, 10], id: \.self) { val in
+                            Button(action: { quantity = val }) {
+                                Text("\(val)")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(quantity == val ? Color.blue : Color.white.opacity(0.1))
+                                    .cornerRadius(10)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    // Subtotal
+                    HStack {
+                        Text("Subtotal:")
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text(CurrencyHelper.format(product.price * Double(quantity)))
+                            .font(.system(size: 20, weight: .heavy))
+                            .foregroundColor(.cyan)
+                    }
+                    .padding(.horizontal, 24)
+
+                    Spacer()
+
+                    // Tombol OK
+                    Button(action: {
+                        onConfirm(quantity)
+                        presentationMode.wrappedValue.dismiss()
+                    }) {
+                        Text("OK")
+                            .font(.headline.bold())
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.green)
+                            .cornerRadius(14)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle("Atur Jumlah Pesanan")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Batal") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
         }
     }
 }

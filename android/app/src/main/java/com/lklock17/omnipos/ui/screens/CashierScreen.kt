@@ -61,12 +61,49 @@ fun CashierScreen() {
     var showShippingDialog by remember { mutableStateOf(false) }
     var showAddressBookSheet by remember { mutableStateOf(false) }
 
+    // Scan Popup Flow: "Mau pesan berapa?" & "Sudah atau Tambah Lagi?"
+    var scannedProductForQty by remember { mutableStateOf<Product?>(null) }
+    var scanQuantity by remember { mutableStateOf(1) }
+    var showPostScanChoice by remember { mutableStateOf(false) }
+    var lastAddedProductName by remember { mutableStateOf("") }
+    var lastAddedQty by remember { mutableStateOf(1) }
+
     // Success & Print Confirmation State
     var lastCompletedOrder by remember { mutableStateOf<Order?>(null) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var printTargetFormat by remember { mutableStateOf<LabelPrintFormat?>(null) }
     var showPrintReceiptConfirm by remember { mutableStateOf(false) }
     var showPrintShippingConfirm by remember { mutableStateOf(false) }
+
+    val launchScanner: () -> Unit = {
+        try {
+            val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS)
+                .enableAutoZoom()
+                .build()
+            val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
+            scanner.startScan()
+                .addOnSuccessListener { barcode ->
+                    val code = barcode.rawValue?.trim() ?: ""
+                    if (code.isNotEmpty()) {
+                        val matched = DataManager.products.firstOrNull {
+                            it.barcode.equals(code, ignoreCase = true) || it.sku.equals(code, ignoreCase = true)
+                        }
+                        if (matched != null) {
+                            scannedProductForQty = matched
+                            scanQuantity = 1
+                        } else {
+                            Toast.makeText(context, "Produk dengan barcode $code tidak ditemukan.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Toast.makeText(context, "Scanner: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Buka kamera scanner gagal: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val filteredProducts = remember(selectedCategory, searchQuery, DataManager.products.size) {
         DataManager.products.filter { p ->
@@ -151,15 +188,9 @@ fun CashierScreen() {
                                                 it.barcode.isNotBlank() && it.barcode.equals(trimmed, ignoreCase = true)
                                             }
                                             if (matched != null) {
-                                                val existing = cart.indexOfFirst { it.product.id == matched.id }
-                                                if (existing >= 0) {
-                                                    val current = cart[existing]
-                                                    cart[existing] = current.copy(quantity = current.quantity + 1)
-                                                } else {
-                                                    cart.add(OrderItem(product = matched, quantity = 1))
-                                                }
-                                                Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
                                                 searchQuery = ""
+                                                scannedProductForQty = matched
+                                                scanQuantity = 1
                                             }
                                         }
                                     },
@@ -198,41 +229,7 @@ fun CashierScreen() {
                                     )
                                 )
                                 .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(12.dp))
-                                .clickable {
-                                    try {
-                                        val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
-                                            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS)
-                                            .enableAutoZoom()
-                                            .build()
-                                        val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
-                                        scanner.startScan()
-                                            .addOnSuccessListener { barcode ->
-                                                val code = barcode.rawValue?.trim() ?: ""
-                                                if (code.isNotEmpty()) {
-                                                    val matched = DataManager.products.firstOrNull {
-                                                        it.barcode.equals(code, ignoreCase = true) || it.sku.equals(code, ignoreCase = true)
-                                                    }
-                                                    if (matched != null) {
-                                                        val existing = cart.indexOfFirst { it.product.id == matched.id }
-                                                        if (existing >= 0) {
-                                                            val current = cart[existing]
-                                                            cart[existing] = current.copy(quantity = current.quantity + 1)
-                                                        } else {
-                                                            cart.add(OrderItem(product = matched, quantity = 1))
-                                                        }
-                                                        Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        Toast.makeText(context, "Produk dengan barcode $code tidak ditemukan.", Toast.LENGTH_LONG).show()
-                                                    }
-                                                }
-                                            }
-                                            .addOnFailureListener { e ->
-                                                Toast.makeText(context, "Scanner: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                            }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Buka kamera scanner gagal: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
+                                .clickable { launchScanner() },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -730,6 +727,225 @@ fun CashierScreen() {
             onSave = { updated ->
                 shippingInfo = updated
                 showShippingDialog = false
+            }
+        )
+    }
+
+    // 1. Popup "Mau Pesan Berapa?" Saat Scan Sukses
+    if (scannedProductForQty != null) {
+        val prod = scannedProductForQty!!
+        val bitmap = remember(prod.imageBase64) { ImageHelper.decodeBase64ToBitmap(prod.imageBase64) }
+
+        AlertDialog(
+            onDismissRequest = { scannedProductForQty = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AddShoppingCart, contentDescription = null, tint = Color(0xFF38BDF8))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Mau Pesan Berapa?", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Ringkasan Produk
+                    Surface(
+                        color = Color(0x1FFFFFFF),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = prod.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0x2838BDF8)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(categoryIcon(prod.category), contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(24.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column {
+                                Text(prod.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    text = Order.formatRupiah(prod.price),
+                                    color = Color(0xFF10B981),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "Stok tersedia: ${prod.stock} ${prod.unit}",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Stepper Jumlah Pesanan
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        FilledIconButton(
+                            onClick = { if (scanQuantity > 1) scanQuantity -= 1 },
+                            modifier = Modifier.size(40.dp),
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x33FFFFFF))
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = "Kurang", tint = Color.White)
+                        }
+
+                        Text(
+                            text = "$scanQuantity",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+
+                        FilledIconButton(
+                            onClick = { scanQuantity += 1 },
+                            modifier = Modifier.size(40.dp),
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF0284C7))
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Tambah", tint = Color.White)
+                        }
+                    }
+
+                    // Quick Chips (+1, +2, +5, +10)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(1, 2, 5, 10).forEach { qty ->
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { scanQuantity = qty },
+                                color = if (scanQuantity == qty) Color(0xFF0284C7) else Color(0x1FFFFFFF),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "$qty",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Subtotal Preview
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Subtotal:", fontSize = 13.sp, color = Color.Gray)
+                        Text(
+                            text = Order.formatRupiah(prod.price * scanQuantity),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val qty = maxOf(1, scanQuantity)
+                        val existing = cart.indexOfFirst { it.product.id == prod.id }
+                        if (existing >= 0) {
+                            val current = cart[existing]
+                            cart[existing] = current.copy(quantity = current.quantity + qty)
+                        } else {
+                            cart.add(OrderItem(product = prod, quantity = qty))
+                        }
+                        lastAddedProductName = prod.name
+                        lastAddedQty = qty
+                        scannedProductForQty = null
+                        showPostScanChoice = true
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
+                    Text("OK", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { scannedProductForQty = null }) {
+                    Text("Batal", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    // 2. Dialog Pilihan: "Sudah (Lihat Keranjang)" atau "Tambah Produk Lagi"
+    if (showPostScanChoice) {
+        AlertDialog(
+            onDismissRequest = { showPostScanChoice = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Produk Ditambahkan!", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = "$lastAddedQty x \"$lastAddedProductName\" telah masuk ke keranjang.\n\nApakah sudah selesai atau mau tambah produk lagi?",
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPostScanChoice = false
+                        launchScanner()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tambah Produk Lagi")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showPostScanChoice = false
+                        showCartSheet = true
+                    },
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981))
+                ) {
+                    Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Sudah (Lihat Keranjang)", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                }
             }
         )
     }

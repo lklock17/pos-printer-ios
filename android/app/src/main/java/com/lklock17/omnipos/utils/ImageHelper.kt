@@ -56,3 +56,4 @@ object ImageHelper {
         return Bitmap.createScaledBitmap(bitmap, maxOf(1, newWidth), maxOf(1, newHeight), true)
     }
 }
+
