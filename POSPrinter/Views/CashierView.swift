@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import AudioToolbox
 
 struct CashierView: View {
     @ObservedObject var dataManager = DataManager.shared
@@ -10,6 +12,9 @@ struct CashierView: View {
     @State private var showCartSheet: Bool = false
     @State private var showPaymentSheet: Bool = false
     @State private var showShippingModal: Bool = false
+    @State private var showBarcodeScannerSheet: Bool = false
+    @State private var scanFeedbackMessage: String = ""
+    @State private var showScanFeedbackToast: Bool = false
     
     // Transaksi State
     @State private var orderType: OrderType = .offline
@@ -138,6 +143,28 @@ struct CashierView: View {
             .sheet(isPresented: $showSuccessModal) {
                 successModalView
             }
+            .sheet(isPresented: $showBarcodeScannerSheet) {
+                BarcodeScannerModal(onScanned: { code in
+                    let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let matched = dataManager.products.first(where: {
+                        (!$0.barcode.isEmpty && $0.barcode.caseInsensitiveCompare(trimmed) == .orderedSame) ||
+                        (!$0.sku.isEmpty && $0.sku.caseInsensitiveCompare(trimmed) == .orderedSame)
+                    }) {
+                        addToCart(matched)
+                        scanFeedbackMessage = "+1 \(matched.name)"
+                        showScanFeedbackToast = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            showScanFeedbackToast = false
+                        }
+                    } else {
+                        scanFeedbackMessage = "Barcode \(trimmed) tidak ditemukan"
+                        showScanFeedbackToast = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                            showScanFeedbackToast = false
+                        }
+                    }
+                })
+            }
             .alert("Status Cetak", isPresented: $showPrintStatusAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -146,29 +173,72 @@ struct CashierView: View {
         }
     }
 
-    // MARK: - Search Bar
+    // MARK: - Search Bar with Barcode Scanner & Hardware Scanner Auto-Add
     private var searchBarSection: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.cyan)
-            TextField("Cari produk, SKU, barcode...", text: $searchQuery)
-                .foregroundColor(.white)
-            if !searchQuery.isEmpty {
-                Button(action: { searchQuery = "" }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
+        HStack(spacing: 8) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.cyan)
+                TextField("Cari / scan barcode...", text: $searchQuery)
+                    .foregroundColor(.white)
+                    .onChange(of: searchQuery) { newQuery in
+                        let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.count >= 6 {
+                            if let matched = dataManager.products.first(where: {
+                                !$0.barcode.isEmpty && $0.barcode.caseInsensitiveCompare(trimmed) == .orderedSame
+                            }) {
+                                addToCart(matched)
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.notificationOccurred(.success)
+                                searchQuery = ""
+                            }
+                        }
+                    }
+                if !searchQuery.isEmpty {
+                    Button(action: { searchQuery = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.gray)
+                    }
                 }
             }
+            .padding(11)
+            .background(Color.white.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+
+            // Tombol Kamera Barcode Scanner
+            Button(action: { showBarcodeScannerSheet = true }) {
+                Image(systemName: "barcode.viewfinder")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .cornerRadius(12)
+                    .shadow(color: .cyan.opacity(0.4), radius: 6, x: 0, y: 3)
+            }
         }
-        .padding(11)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-        )
         .padding(.horizontal, 16)
         .padding(.top, 8)
+        .overlay(alignment: .top) {
+            if showScanFeedbackToast {
+                Text(scanFeedbackMessage)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(scanFeedbackMessage.contains("tidak") ? Color.red : Color.green)
+                    .cornerRadius(20)
+                    .shadow(radius: 6)
+                    .offset(y: -40)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeInOut, value: showScanFeedbackToast)
+            }
+        }
     }
 
     // MARK: - Category Chips
@@ -896,5 +966,157 @@ struct QuickCashStyle: ButtonStyle {
             .background(configuration.isPressed ? Color.blue.opacity(0.2) : Color(UIColor.systemGray5))
             .foregroundColor(.primary)
             .cornerRadius(8)
+    }
+}
+
+// MARK: - Barcode Scanner Camera Modal (Vision / AVFoundation)
+struct BarcodeScannerModal: View {
+    @Environment(\.presentationMode) private var presentationMode
+    var onScanned: (String) -> Void
+    @State private var lastScannedCode: String = ""
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
+
+                BarcodeScannerView { code in
+                    lastScannedCode = code
+                    onScanned(code)
+                }
+                .edgesIgnoringSafeArea(.all)
+
+                // Viewfinder Reticle Overlay
+                VStack {
+                    Text("Arahkan kamera ke stiker barcode produk")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(20)
+                        .padding(.top, 24)
+
+                    Spacer()
+
+                    // Target Box
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.cyan, lineWidth: 3)
+                            .frame(width: 280, height: 180)
+
+                        Rectangle()
+                            .fill(Color.red.opacity(0.8))
+                            .frame(width: 250, height: 2)
+                    }
+
+                    Spacer()
+
+                    if !lastScannedCode.isEmpty {
+                        Text("Terdeteksi: \(lastScannedCode)")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.black.opacity(0.8))
+                            .cornerRadius(12)
+                            .padding(.bottom, 20)
+                    }
+                }
+            }
+            .navigationTitle("Pindai Barcode Kasir")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Selesai") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .foregroundColor(.cyan)
+                    .font(.body.bold())
+                }
+            }
+        }
+    }
+}
+
+struct BarcodeScannerView: UIViewControllerRepresentable {
+    var onScanned: (String) -> Void
+
+    func makeUIViewController(context: Context) -> BarcodeScannerViewController {
+        let vc = BarcodeScannerViewController()
+        vc.onScanned = onScanned
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: BarcodeScannerViewController, context: Context) {}
+}
+
+class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    var captureSession: AVCaptureSession?
+    var previewLayer: AVCaptureVideoPreviewLayer?
+    var onScanned: ((String) -> Void)?
+    var isProcessing = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        setupCamera()
+    }
+
+    private func setupCamera() {
+        let session = AVCaptureSession()
+        guard let device = AVCaptureDevice.default(for: .video) else { return }
+        guard let input = try? AVCaptureDeviceInput(device: device) else { return }
+
+        if session.canAddInput(input) {
+            session.addInput(input)
+        }
+
+        let output = AVCaptureMetadataOutput()
+        if session.canAddOutput(output) {
+            session.addOutput(output)
+            output.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+            output.metadataObjectTypes = [.code128, .ean13, .ean8, .qr, .code39]
+        }
+
+        let preview = AVCaptureVideoPreviewLayer(session: session)
+        preview.frame = view.layer.bounds
+        preview.videoGravity = .resizeAspectFill
+        view.layer.addSublayer(preview)
+        previewLayer = preview
+
+        self.captureSession = session
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.startRunning()
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = view.bounds
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if captureSession?.isRunning == true {
+            captureSession?.stopRunning()
+        }
+    }
+
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        guard !isProcessing,
+              let first = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+              let str = first.stringValue else { return }
+
+        isProcessing = true
+        AudioServicesPlaySystemSound(1057) // Beep
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+
+        onScanned?(str)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.isProcessing = false
+        }
     }
 }

@@ -73,5 +73,8 @@ dependencies {
     // Coroutines & JSON
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // Google Play Services Code Scanner (Turnkey Camera Barcode Scanning)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }
 

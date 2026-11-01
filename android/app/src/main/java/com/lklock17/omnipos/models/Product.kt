@@ -20,3 +20,22 @@ data class Product(
         get() = stock <= minStockAlert
 }
 
+object BarcodeHelper {
+    /**
+     * Membuat barcode standar 12 digit acak (EAN-12 format Indonesia diawali 899)
+     */
+    fun generateEan12(): String {
+        val random9 = (1..9).map { (0..9).random() }.joinToString("")
+        return "899$random9"
+    }
+
+    /**
+     * Membuat SKU unik toko (misal: PRD-XXXX)
+     */
+    fun generateSku(): String {
+        val randomNum = (1000..9999).random()
+        return "PRD-$randomNum"
+    }
+}
+
+

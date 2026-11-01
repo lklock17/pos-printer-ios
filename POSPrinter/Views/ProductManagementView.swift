@@ -11,6 +11,7 @@ struct ProductManagementView: View {
     @State private var selectedProductToEdit: Product? = nil
     @State private var productToDelete: Product? = nil
     @State private var showDeleteConfirm: Bool = false
+    @State private var productToPrintBarcode: Product? = nil
 
     var filteredProducts: [Product] {
         dataManager.products.filter { p in
@@ -119,11 +120,14 @@ struct ProductManagementView: View {
                     } else {
                         List {
                             ForEach(filteredProducts) { product in
-                                ProductRowItem(product: product, onEdit: {
-                                    selectedProductToEdit = product
-                                }, onStockAdjust: { delta in
-                                    dataManager.adjustStock(productId: product.id, delta: delta)
-                                })
+                                ProductRowItem(
+                                    product: product,
+                                    onEdit: { selectedProductToEdit = product },
+                                    onPrintBarcode: { productToPrintBarcode = product },
+                                    onStockAdjust: { delta in
+                                        dataManager.adjustStock(productId: product.id, delta: delta)
+                                    }
+                                )
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         productToDelete = product
@@ -138,6 +142,13 @@ struct ProductManagementView: View {
                                         Label("Edit", systemImage: "pencil")
                                     }
                                     .tint(.orange)
+
+                                    Button {
+                                        productToPrintBarcode = product
+                                    } label: {
+                                        Label("Cetak Barcode", systemImage: "printer.fill")
+                                    }
+                                    .tint(.green)
                                 }
                             }
                         }
@@ -162,6 +173,9 @@ struct ProductManagementView: View {
             .sheet(item: $selectedProductToEdit) { product in
                 ProductFormView(existingProduct: product)
             }
+            .sheet(item: $productToPrintBarcode) { product in
+                PrintBarcodeTagSheet(product: product)
+            }
             .alert("Hapus Produk", isPresented: $showDeleteConfirm) {
                 Button("Batal", role: .cancel) { }
                 Button("Hapus", role: .destructive) {
@@ -180,6 +194,7 @@ struct ProductManagementView: View {
 struct ProductRowItem: View {
     let product: Product
     var onEdit: () -> Void
+    var onPrintBarcode: () -> Void
     var onStockAdjust: (Int) -> Void
 
     var body: some View {
@@ -238,28 +253,41 @@ struct ProductRowItem: View {
 
             Spacer()
 
-            // Kontrol Stok Cepat & Status
+            // Tombol Cetak Barcode & Kontrol Stok
             VStack(alignment: .trailing, spacing: 6) {
                 stockBadge
 
-                HStack(spacing: 6) {
-                    Button(action: { onStockAdjust(-1) }) {
-                        Image(systemName: "minus.circle")
-                            .font(.system(size: 18))
-                            .foregroundColor(.gray)
+                HStack(spacing: 8) {
+                    // Tombol Cetak Stiker Barcode Harga
+                    Button(action: onPrintBarcode) {
+                        Image(systemName: "printer.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(.green)
+                            .padding(6)
+                            .background(Color.green.opacity(0.15))
+                            .clipShape(Circle())
                     }
                     .buttonStyle(BorderlessButtonStyle())
 
-                    Text("\(product.stock)")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(minWidth: 24)
+                    HStack(spacing: 4) {
+                        Button(action: { onStockAdjust(-1) }) {
+                            Image(systemName: "minus.circle")
+                                .font(.system(size: 18))
+                                .foregroundColor(.gray)
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
 
-                    Button(action: { onStockAdjust(1) }) {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 18))
-                            .foregroundColor(.blue)
+                        Text("\(product.stock)")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(minWidth: 20)
+
+                        Button(action: { onStockAdjust(1) }) {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 18))
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
                     }
-                    .buttonStyle(BorderlessButtonStyle())
                 }
             }
         }
@@ -298,6 +326,155 @@ struct ProductRowItem: View {
                     .clipShape(Capsule())
             }
         }
+    }
+}
+
+// MARK: - Sheet Dialog Cetak Barcode Harga (55x30 mm - Maks 10)
+struct PrintBarcodeTagSheet: View {
+    @Environment(\.presentationMode) private var presentationMode
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var btManager = BluetoothManager.shared
+
+    let product: Product
+    @State private var quantity: Int = 1
+    @State private var statusMessage: String = ""
+    @State private var showAlert: Bool = false
+
+    var barcodeText: String {
+        product.barcode.isEmpty ? product.sku : product.barcode
+    }
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                LiquidGlassBackground()
+
+                VStack(spacing: 20) {
+                    // Preview Card Stiker 55x30
+                    VStack(spacing: 6) {
+                        Text(dataManager.storeConfig.storeName.isEmpty ? "OMNIPOS STORE" : dataManager.storeConfig.storeName.uppercased())
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.black)
+                        
+                        Divider().background(Color.black)
+
+                        Text(String(product.name.prefix(24)))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+
+                        // Mock barcode
+                        HStack(spacing: 2) {
+                            ForEach(0..<20) { i in
+                                Rectangle()
+                                    .fill(Color.black)
+                                    .frame(width: (i % 3 == 0) ? 3 : 1.5, height: 28)
+                            }
+                        }
+
+                        Text(barcodeText)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.black)
+
+                        Divider().background(Color.black)
+
+                        Text(product.formattedPrice)
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundColor(.black)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black, lineWidth: 1.5))
+                    }
+                    .padding(14)
+                    .background(Color.white)
+                    .cornerRadius(10)
+                    .shadow(color: .cyan.opacity(0.3), radius: 8, x: 0, y: 4)
+                    .padding(.horizontal, 24)
+
+                    // Quantity Stepper (1 to 10)
+                    VStack(spacing: 8) {
+                        Text("Jumlah Stiker (Maksimal 10):")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+
+                        HStack(spacing: 20) {
+                            Button(action: { if quantity > 1 { quantity -= 1 } }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(quantity > 1 ? .cyan : .gray)
+                            }
+
+                            Text("\(quantity)")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 40)
+
+                            Button(action: { if quantity < 10 { quantity += 1 } }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(quantity < 10 ? .cyan : .gray)
+                            }
+                        }
+
+                        Text("• Otomatis memajukan 1 stiker penutup agar siap disobek.")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 24)
+
+                    Spacer()
+
+                    // Tombol Cetak
+                    Button(action: printStickers) {
+                        HStack {
+                            Image(systemName: "printer.fill")
+                            Text("Cetak \(quantity) Stiker ke Kassen MT200A")
+                                .fontWeight(.bold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle("Cetak Barcode Harga (55x30)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Tutup") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+            .alert(isPresented: $showAlert) {
+                Alert(title: Text("Status Cetak"), message: Text(statusMessage), dismissButton: .default(Text("OK")) {
+                    if statusMessage.contains("Berhasil") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                })
+            }
+        }
+    }
+
+    private func printStickers() {
+        guard btManager.isConnected else {
+            statusMessage = "Printer belum terhubung! Silakan hubungkan Kassen MT200A di tab Pengaturan terlebih dahulu."
+            showAlert = true
+            return
+        }
+
+        let storeName = dataManager.storeConfig.storeName
+        let payload = PrinterEngine.buildProductBarcodeTag55x30Raster(product: product, storeName: storeName, quantity: quantity)
+        btManager.sendData(payload)
+        statusMessage = "Berhasil mengirim \(quantity) stiker barcode ke printer!"
+        showAlert = true
     }
 }
 

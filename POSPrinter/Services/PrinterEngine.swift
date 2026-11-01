@@ -242,6 +242,67 @@ public class PrinterEngine {
         return tspl.data(using: .utf8) ?? Data()
     }
 
+    // MARK: - 3a. Build Data Stiker Thermal 55x30 mm (TSPL Command untuk Printer Kassen MT200A)
+    public static func buildTSPLSticker55x30Data(order: Order, config: StoreConfig) -> Data {
+        guard let ship = order.shippingInfo else { return Data() }
+
+        var tspl = ""
+        // Ukuran stiker 55mm x 30mm, 203 DPI (8 dots/mm) -> 440 x 240 dots, gap 3mm
+        tspl += "SIZE 55 mm, 30 mm\r\n"
+        tspl += "GAP 3 mm, 0 mm\r\n"
+        tspl += "DIRECTION 1\r\n"
+        tspl += "CLS\r\n"
+
+        // Border luar stiker (440x240 dots)
+        tspl += "BOX 6,6,434,234,2\r\n"
+
+        // Header: Kurir & Layanan & COD
+        tspl += "TEXT 12,10,\"3\",0,1,1,\"\(ship.courier.uppercased())\"\r\n"
+        let srvShort = ship.service.prefix(7).uppercased()
+        tspl += "TEXT 230,12,\"2\",0,1,1,\"[\(srvShort)]\"\r\n"
+        if ship.isCOD {
+            tspl += "TEXT 330,10,\"3\",0,1,1,\"COD\"\r\n"
+        } else {
+            tspl += "TEXT 320,12,\"2\",0,1,1,\"NON-COD\"\r\n"
+        }
+        tspl += "BOX 6,32,434,34,1\r\n"
+
+        // Barcode Nomor Resi (Code 128)
+        let tracking = ship.trackingNumber.isEmpty ? order.invoiceNumber : ship.trackingNumber
+        tspl += "BARCODE 12,38,\"128\",32,1,0,2,2,\"\(tracking)\"\r\n"
+        tspl += "TEXT 12,73,\"2\",0,1,1,\"RESI: \(tracking)\"\r\n"
+        tspl += "BOX 6,92,434,94,1\r\n"
+
+        // Penerima (Tujuan Utama Pengiriman)
+        tspl += "TEXT 12,98,\"3\",0,1,1,\"Kpd: \(String(ship.recipientName.prefix(20)))\"\r\n"
+        tspl += "TEXT 12,124,\"2\",0,1,1,\"Telp: \(ship.recipientPhone)\"\r\n"
+
+        // Alamat ringkas
+        let rAddr = ship.recipientAddress
+        let line1 = String(rAddr.prefix(32))
+        let remaining = rAddr.count > 32 ? String(rAddr.dropFirst(32)) : ""
+        let line2 = String(remaining.prefix(32))
+
+        tspl += "TEXT 12,144,\"2\",0,1,1,\"\(line1)\"\r\n"
+        if !line2.isEmpty {
+            tspl += "TEXT 12,164,\"2\",0,1,1,\"\(line2)\"\r\n"
+        }
+        tspl += "BOX 6,186,434,188,1\r\n"
+
+        // Footer COD & Pengirim
+        let sName = ship.senderName.isEmpty ? config.defaultSenderName : ship.senderName
+        if ship.isCOD {
+            tspl += "TEXT 12,192,\"2\",0,1,1,\"COD: \(CurrencyHelper.format(ship.codAmount))\"\r\n"
+            tspl += "TEXT 12,212,\"1\",0,1,1,\"Dr: \(String(sName.prefix(16))) | \(ship.postalCode)\"\r\n"
+        } else {
+            tspl += "TEXT 12,192,\"2\",0,1,1,\"Dr: \(String(sName.prefix(16)))\"\r\n"
+            tspl += "TEXT 12,212,\"1\",0,1,1,\"Pos: \(ship.postalCode) | OmniPOS\"\r\n"
+        }
+
+        tspl += "PRINT 1,1\r\n"
+        return tspl.data(using: .utf8) ?? Data()
+    }
+
     // MARK: - 3. Build Data Stiker Thermal 58x40 mm (TSPL Command untuk Printer Stiker Kecil / Tempel)
     public static func buildTSPLSticker58x40Data(order: Order, config: StoreConfig) -> Data {
         guard let ship = order.shippingInfo else { return Data() }
@@ -373,6 +434,237 @@ public class PrinterEngine {
         if config.isAutoCutEnabled {
             data.append(contentsOf: cmdAutoCut)
         }
+        return data
+    }
+
+    // MARK: - 5. Build Barcode Tag Stiker Produk 55x30 mm (ESC/POS Raster Murni Kassen MT200A)
+    // Kalibrasi Presisi: 264 dots per label (33.0 mm) + 284 dots sobekan penutup, Zero Drift!
+    private static let code128Patterns: [String] = [
+        "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+        "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+        "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+        "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+        "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+        "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+        "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+        "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+        "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+        "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+        "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+    ]
+
+    public static func renderProductBarcodeTag55x30Image(
+        storeName: String,
+        productName: String,
+        barcode: String,
+        price: Double
+    ) -> UIImage {
+        let width: CGFloat = 384
+        let height: CGFloat = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
+        let size = CGSize(width: width, height: height)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+            cg.setFillColor(UIColor.white.cgColor)
+            cg.fill(CGRect(origin: .zero, size: size))
+
+            // 1. Nama Toko (y=16)
+            let storeUpper = (storeName.isEmpty ? "OMNIPOS STORE" : storeName).uppercased()
+            let storeFont = UIFont.boldSystemFont(ofSize: 13)
+            let storeAttrs: [NSAttributedString.Key: Any] = [
+                .font: storeFont,
+                .foregroundColor: UIColor.black
+            ]
+            let storeSize = storeUpper.size(withAttributes: storeAttrs)
+            let storeRect = CGRect(x: (width - storeSize.width) / 2, y: 16, width: storeSize.width, height: storeSize.height)
+            storeUpper.draw(in: storeRect, withAttributes: storeAttrs)
+
+            // Divider Line 1
+            cg.setStrokeColor(UIColor.black.cgColor)
+            cg.setLineWidth(1)
+            cg.move(to: CGPoint(x: 10, y: 34))
+            cg.addLine(to: CGPoint(x: width - 11, y: 34))
+            cg.strokePath()
+
+            // 2. Nama Produk (y=38)
+            let dispName = String(productName.prefix(24))
+            let prodFont = UIFont.boldSystemFont(ofSize: 16)
+            let prodAttrs: [NSAttributedString.Key: Any] = [
+                .font: prodFont,
+                .foregroundColor: UIColor.black
+            ]
+            let prodSize = dispName.size(withAttributes: prodAttrs)
+            let prodRect = CGRect(x: (width - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height)
+            dispName.draw(in: prodRect, withAttributes: prodAttrs)
+
+            // 3. Barcode Code 128 (y=64, h=44)
+            let cleanBc = barcode.filter { $0.asciiValue != nil && $0.asciiValue! >= 32 && $0.asciiValue! <= 126 }
+            let finalBc = cleanBc.isEmpty ? "00000000" : cleanBc
+            var codes: [Int] = [104] // Start B
+            var csum = 104
+            for (i, char) in finalBc.enumerated() {
+                let v = Int(char.asciiValue!) - 32
+                codes.append(v)
+                csum += v * (i + 1)
+            }
+            codes.append(csum % 103)
+            codes.append(106) // Stop
+
+            var pattern = ""
+            for code in codes {
+                if code >= 0 && code < code128Patterns.count {
+                    pattern += code128Patterns[code]
+                }
+            }
+
+            var moduleW: CGFloat = 2
+            let totalModules = pattern.reduce(0) { $0 + (Int(String($1)) ?? 1) }
+            var barTotalW = CGFloat(totalModules) * moduleW
+            if barTotalW > width - 24 {
+                moduleW = 1
+                barTotalW = CGFloat(totalModules) * moduleW
+            }
+
+            let startX = max(10, (width - barTotalW) / 2)
+            var curX = startX
+            let barY: CGFloat = 64
+            let barH: CGFloat = 44
+
+            cg.setFillColor(UIColor.black.cgColor)
+            for (idx, char) in pattern.enumerated() {
+                let w = CGFloat(Int(String(char)) ?? 1) * moduleW
+                if idx % 2 == 0 {
+                    cg.fill(CGRect(x: curX, y: barY, width: w, height: barH))
+                }
+                curX += w
+            }
+
+            // 4. Barcode Teks (y=112)
+            let codeFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+            let codeAttrs: [NSAttributedString.Key: Any] = [
+                .font: codeFont,
+                .foregroundColor: UIColor.black
+            ]
+            let codeSize = finalBc.size(withAttributes: codeAttrs)
+            let codeRect = CGRect(x: (width - codeSize.width) / 2, y: 112, width: codeSize.width, height: codeSize.height)
+            finalBc.draw(in: codeRect, withAttributes: codeAttrs)
+
+            // Divider Line 2
+            cg.setStrokeColor(UIColor.black.cgColor)
+            cg.setLineWidth(1)
+            cg.move(to: CGPoint(x: 10, y: 132))
+            cg.addLine(to: CGPoint(x: width - 11, y: 132))
+            cg.strokePath()
+
+            // 5. Price Box (y=138 s/d 204, height=66)
+            let boxRect = CGRect(x: 14, y: 138, width: width - 29, height: 66)
+            cg.setStrokeColor(UIColor.black.cgColor)
+            cg.setLineWidth(2)
+            cg.stroke(boxRect)
+
+            let priceStr = CurrencyHelper.format(price)
+            let priceFont = UIFont.boldSystemFont(ofSize: 22)
+            let priceAttrs: [NSAttributedString.Key: Any] = [
+                .font: priceFont,
+                .foregroundColor: UIColor.black
+            ]
+            let priceSize = priceStr.size(withAttributes: priceAttrs)
+            let priceRect = CGRect(
+                x: (width - priceSize.width) / 2,
+                y: 138 + (66 - priceSize.height) / 2,
+                width: priceSize.width,
+                height: priceSize.height
+            )
+            priceStr.draw(in: priceRect, withAttributes: priceAttrs)
+
+            // y=205 s/d 264 adalah margin bawah stiker dan gap fisik 3mm
+        }
+    }
+
+    public static func imageToEscPosRaster(image: UIImage) -> Data {
+        guard let cgImage = image.cgImage else { return Data() }
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = (width + 7) / 8
+
+        var data = Data()
+        let xL = UInt8(bytesPerRow & 0xFF)
+        let xH = UInt8((bytesPerRow >> 8) & 0xFF)
+        let yL = UInt8(height & 0xFF)
+        let yH = UInt8((height >> 8) & 0xFF)
+        data.append(contentsOf: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.genericGrayGamma2_2) else { return Data() }
+        var rawPixels = [UInt8](repeating: 255, count: width * height)
+        let context = CGContext(
+            data: &rawPixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        )
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        for y in 0..<height {
+            for byteIdx in 0..<bytesPerRow {
+                var b: UInt8 = 0
+                for bit in 0..<8 {
+                    let x = byteIdx * 8 + bit
+                    if x < width {
+                        let gray = rawPixels[y * width + x]
+                        if gray < 128 {
+                            b |= (1 << (7 - bit))
+                        }
+                    }
+                }
+                data.append(b)
+            }
+        }
+        return data
+    }
+
+    public static func createBlankEscPosRaster(width: Int = 384, height: Int = 284) -> Data {
+        let bytesPerRow = (width + 7) / 8
+        var data = Data()
+        let xL = UInt8(bytesPerRow & 0xFF)
+        let xH = UInt8((bytesPerRow >> 8) & 0xFF)
+        let yL = UInt8(height & 0xFF)
+        let yH = UInt8((height >> 8) & 0xFF)
+        data.append(contentsOf: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
+        let blankRow = [UInt8](repeating: 0, count: bytesPerRow)
+        for _ in 0..<height {
+            data.append(contentsOf: blankRow)
+        }
+        return data
+    }
+
+    public static func buildProductBarcodeTag55x30Raster(
+        product: Product,
+        storeName: String,
+        quantity: Int = 1
+    ) -> Data {
+        let safeQty = max(1, min(10, quantity))
+        var data = Data()
+        data.append(contentsOf: cmdInit)
+
+        let barcode = product.barcode.isEmpty ? product.sku : product.barcode
+        let image = renderProductBarcodeTag55x30Image(
+            storeName: storeName,
+            productName: product.name,
+            barcode: barcode,
+            price: product.price
+        )
+        let labelRaster = imageToEscPosRaster(image: image)
+
+        for _ in 0..<safeQty {
+            data.append(labelRaster)
+        }
+
+        // 1 stiker kosong penutup (284 dots) untuk pendorongan ke pisau sobek
+        data.append(createBlankEscPosRaster(width: 384, height: 284))
         return data
     }
 

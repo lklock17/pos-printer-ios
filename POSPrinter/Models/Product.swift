@@ -27,8 +27,8 @@ public struct Product: Identifiable, Codable, Equatable {
                 notes: String? = nil) {
         self.id = id
         self.name = name
-        self.sku = sku.isEmpty ? "SKU-\(Int.random(in: 1000...9999))" : sku
-        self.barcode = barcode
+        self.sku = sku.isEmpty ? BarcodeHelper.generateSku() : sku
+        self.barcode = barcode.isEmpty ? BarcodeHelper.generateEan12() : barcode
         self.price = price
         self.costPrice = costPrice
         self.stock = stock
@@ -72,6 +72,17 @@ public struct CurrencyHelper {
         formatter.groupingSeparator = "."
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: amount)) ?? "\(Int(amount))"
+    }
+}
+
+public struct BarcodeHelper {
+    public static func generateEan12() -> String {
+        let random9 = (1...9).map { _ in String(Int.random(in: 0...9)) }.joined()
+        return "899\(random9)"
+    }
+
+    public static func generateSku() -> String {
+        return "PRD-\(Int.random(in: 1000...9999))"
     }
 }
 

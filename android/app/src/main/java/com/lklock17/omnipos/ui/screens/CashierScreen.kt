@@ -77,24 +77,101 @@ fun CashierScreen() {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                // Search Bar with Camera Barcode Scanner & Hardware Scanner Auto-Add
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp),
-                    placeholder = { Text("Cari produk atau scan barcode...", color = Color.Gray) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0x1AFFFFFF),
-                        unfocusedContainerColor = Color(0x0EFFFFFF)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { query ->
+                            searchQuery = query
+                            // Deteksi otomatis jika barcode di-scan menggunakan scanner laser/wedge eksternal
+                            val trimmed = query.trim()
+                            if (trimmed.length >= 6) {
+                                val matched = DataManager.products.firstOrNull { 
+                                    it.barcode.isNotBlank() && it.barcode.equals(trimmed, ignoreCase = true)
+                                }
+                                if (matched != null) {
+                                    val existing = cart.indexOfFirst { it.product.id == matched.id }
+                                    if (existing >= 0) {
+                                        val current = cart[existing]
+                                        cart[existing] = current.copy(quantity = current.quantity + 1)
+                                    } else {
+                                        cart.add(OrderItem(product = matched, quantity = 1))
+                                    }
+                                    Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
+                                    searchQuery = ""
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Cari produk atau scan barcode...", color = Color.Gray) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Hapus", tint = Color.Gray)
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0x1AFFFFFF),
+                            unfocusedContainerColor = Color(0x0EFFFFFF)
+                        )
                     )
-                )
+
+                    // Tombol Kamera Barcode Scanner (Google Play Services Code Scanner)
+                    FilledIconButton(
+                        onClick = {
+                            try {
+                                val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                                    .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS)
+                                    .enableAutoZoom()
+                                    .build()
+                                val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
+                                scanner.startScan()
+                                    .addOnSuccessListener { barcode ->
+                                        val code = barcode.rawValue?.trim() ?: ""
+                                        if (code.isNotEmpty()) {
+                                            val matched = DataManager.products.firstOrNull {
+                                                it.barcode.equals(code, ignoreCase = true) || it.sku.equals(code, ignoreCase = true)
+                                            }
+                                            if (matched != null) {
+                                                val existing = cart.indexOfFirst { it.product.id == matched.id }
+                                                if (existing >= 0) {
+                                                    val current = cart[existing]
+                                                    cart[existing] = current.copy(quantity = current.quantity + 1)
+                                                } else {
+                                                    cart.add(OrderItem(product = matched, quantity = 1))
+                                                }
+                                                Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Produk dengan barcode $code tidak ditemukan.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Toast.makeText(context, "Scanner: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                    }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Buka kamera scanner gagal: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.size(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF2563EB))
+                    ) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode Kamera", tint = Color.White)
+                    }
+                }
 
                 // Category Chips
                 LazyRow(

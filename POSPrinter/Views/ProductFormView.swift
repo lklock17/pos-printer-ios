@@ -148,6 +148,11 @@ struct ProductFormView: View {
                             .foregroundColor(.secondary)
                         TextField("Scan atau ketik barcode", text: $barcode)
                             .keyboardType(.numberPad)
+                        Button(action: { barcode = BarcodeHelper.generateEan12() }) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.footnote)
+                                .foregroundColor(.cyan)
+                        }
                     }
                 }
 
@@ -263,6 +268,7 @@ struct ProductFormView: View {
             }
         } else {
             generateRandomSKU()
+            barcode = BarcodeHelper.generateEan12()
         }
     }
 
@@ -296,12 +302,14 @@ struct ProductFormView: View {
 
         let stockVal = Int(stockText) ?? 0
         let base64Img = selectedImage != nil ? ImageHelper.toBase64(image: selectedImage!) : nil
+        let finalBarcode = barcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? BarcodeHelper.generateEan12() : barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalSku = sku.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? BarcodeHelper.generateSku() : sku.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if var prod = existingProduct {
             prod.name = trimmedName
             prod.category = finalCategory
-            prod.sku = sku
-            prod.barcode = barcode
+            prod.sku = finalSku
+            prod.barcode = finalBarcode
             prod.price = calculatedPrice
             prod.costPrice = calculatedCost
             prod.stock = stockVal

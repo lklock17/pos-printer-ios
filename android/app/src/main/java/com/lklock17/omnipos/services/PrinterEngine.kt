@@ -1,7 +1,14 @@
 package com.lklock17.omnipos.services
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
 import com.lklock17.omnipos.models.Order
 import com.lklock17.omnipos.models.OrderType
+import com.lklock17.omnipos.models.Product
 import com.lklock17.omnipos.models.StoreConfig
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
@@ -222,6 +229,63 @@ object PrinterEngine {
         return sb.toString().toByteArray(Charset.forName("UTF-8"))
     }
 
+    // MARK: - 3a. Build TSPL Sticker 55x30 mm (Stiker Thermal Mini Kassen MT200A)
+    fun buildTSPLSticker55x30Data(order: Order, config: StoreConfig): ByteArray {
+        val ship = order.shippingInfo ?: return ByteArray(0)
+        val sb = StringBuilder()
+
+        sb.append("SIZE 55 mm, 30 mm\r\n")
+        sb.append("GAP 3 mm, 0 mm\r\n")
+        sb.append("DIRECTION 1\r\n")
+        sb.append("CLS\r\n")
+
+        // Border luar (440x240 dots)
+        sb.append("BOX 6,6,434,234,2\r\n")
+
+        // Header Kurir & Layanan & COD
+        sb.append("TEXT 12,10,\"3\",0,1,1,\"${ship.courier.uppercase()}\"\r\n")
+        val serviceShort = ship.service.take(7).uppercase()
+        sb.append("TEXT 230,12,\"2\",0,1,1,\"[$serviceShort]\"\r\n")
+        if (ship.isCOD) {
+            sb.append("TEXT 330,10,\"3\",0,1,1,\"COD\"\r\n")
+        } else {
+            sb.append("TEXT 320,12,\"2\",0,1,1,\"NON-COD\"\r\n")
+        }
+        sb.append("BOX 6,32,434,34,1\r\n")
+
+        // Barcode Nomor Resi
+        val tracking = if (ship.trackingNumber.isEmpty()) order.invoiceNumber else ship.trackingNumber
+        sb.append("BARCODE 12,38,\"128\",32,1,0,2,2,\"$tracking\"\r\n")
+        sb.append("TEXT 12,73,\"2\",0,1,1,\"RESI: $tracking\"\r\n")
+        sb.append("BOX 6,92,434,94,1\r\n")
+
+        // Penerima
+        sb.append("TEXT 12,98,\"3\",0,1,1,\"Kpd: ${ship.recipientName.take(20)}\"\r\n")
+        sb.append("TEXT 12,124,\"2\",0,1,1,\"Telp: ${ship.recipientPhone}\"\r\n")
+
+        val rAddr = ship.recipientAddress
+        val line1 = rAddr.take(32)
+        val line2 = if (rAddr.length > 32) rAddr.substring(32).take(32) else ""
+        sb.append("TEXT 12,144,\"2\",0,1,1,\"$line1\"\r\n")
+        if (line2.isNotEmpty()) {
+            sb.append("TEXT 12,164,\"2\",0,1,1,\"$line2\"\r\n")
+        }
+        sb.append("BOX 6,186,434,188,1\r\n")
+
+        // Footer Pengirim & COD Nominal
+        val sName = if (ship.senderName.isEmpty()) config.defaultSenderName else ship.senderName
+        if (ship.isCOD) {
+            sb.append("TEXT 12,192,\"2\",0,1,1,\"COD: ${Order.formatRupiah(ship.codAmount)}\"\r\n")
+            sb.append("TEXT 12,212,\"1\",0,1,1,\"Dr: ${sName.take(16)} | ${ship.postalCode}\"\r\n")
+        } else {
+            sb.append("TEXT 12,192,\"2\",0,1,1,\"Dr: ${sName.take(16)}\"\r\n")
+            sb.append("TEXT 12,212,\"1\",0,1,1,\"Pos: ${ship.postalCode} | OmniPOS\"\r\n")
+        }
+
+        sb.append("PRINT 1,1\r\n")
+        return sb.toString().toByteArray(Charset.forName("UTF-8"))
+    }
+
     // MARK: - 3. Build TSPL Sticker 58x40 mm (Stiker Thermal Tempel)
     fun buildTSPLSticker58x40Data(order: Order, config: StoreConfig): ByteArray {
         val ship = order.shippingInfo ?: return ByteArray(0)
@@ -340,6 +404,209 @@ object PrinterEngine {
             out.write(CMD_FEED_CUT)
             out.write(CMD_AUTO_CUT_PARTIAL)
         }
+
+        return out.toByteArray()
+    }
+
+    // MARK: - 5. Build Barcode Tag Stiker Produk 55x30 mm (ESC/POS Raster Murni Kassen MT200A)
+    // Kalibrasi Presisi: 264 dots per label (33.0 mm) + 284 dots sobekan penutup, Zero Drift!
+    private val CODE128_PATTERNS = arrayOf(
+        "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+        "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+        "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+        "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+        "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+        "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+        "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+        "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+        "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+        "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+        "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+    )
+
+    fun renderProductBarcodeTag55x30Bitmap(
+        storeName: String,
+        productName: String,
+        barcode: String,
+        price: Double
+    ): Bitmap {
+        val width = 384
+        val height = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+
+        val paintText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val paintLine = Paint().apply {
+            color = Color.BLACK
+            strokeWidth = 1f
+        }
+
+        // 1. Nama Toko (y=16)
+        paintText.textSize = 18f
+        val storeUpper = storeName.ifEmpty { "OMNIPOS STORE" }.uppercase()
+        val textBounds = Rect()
+        paintText.getTextBounds(storeUpper, 0, storeUpper.length, textBounds)
+        val storeX = (width - textBounds.width()) / 2f
+        canvas.drawText(storeUpper, storeX, 26f, paintText)
+        canvas.drawLine(10f, 34f, (width - 11).toFloat(), 34f, paintLine)
+
+        // 2. Nama Produk (y=38)
+        paintText.textSize = 22f
+        val dispName = productName.take(24)
+        paintText.getTextBounds(dispName, 0, dispName.length, textBounds)
+        val prodX = (width - textBounds.width()) / 2f
+        canvas.drawText(dispName, prodX, 56f, paintText)
+
+        // 3. Barcode Code 128 (y=64, h=44)
+        val cleanBarcode = barcode.filter { it.code in 32..126 }.ifEmpty { "00000000" }
+        val codes = mutableListOf<Int>(104) // Start B
+        var csum = 104
+        cleanBarcode.forEachIndexed { i, ch ->
+            val v = ch.code - 32
+            codes.add(v)
+            csum += v * (i + 1)
+        }
+        codes.add(csum % 103)
+        codes.add(106) // Stop
+
+        val pattern = codes.joinToString("") { CODE128_PATTERNS[it] }
+        var moduleW = 2
+        var barTotalW = pattern.sumOf { it.digitToInt() } * moduleW
+        if (barTotalW > width - 24) {
+            moduleW = 1
+            barTotalW = pattern.sumOf { it.digitToInt() } * moduleW
+        }
+        val startX = maxOf(10, (width - barTotalW) / 2)
+        var curX = startX
+        val barY = 64
+        val barH = 44
+        val paintBar = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
+
+        pattern.forEachIndexed { _, ch ->
+            val w = ch.digitToInt() * moduleW
+            if (ch.code % 2 == 0) { // Alternating bars in Code 128 pattern string
+                // Wait: pattern is '212222', even indices (0, 2, 4) are bars, odd (1, 3, 5) are spaces!
+            }
+        }
+        for (i in pattern.indices) {
+            val w = pattern[i].digitToInt() * moduleW
+            if (i % 2 == 0) { // Genap = garis hitam, ganjil = spasi putih
+                canvas.drawRect(curX.toFloat(), barY.toFloat(), (curX + w).toFloat(), (barY + barH).toFloat(), paintBar)
+            }
+            curX += w
+        }
+
+        // 4. Angka Barcode (y=112)
+        paintText.textSize = 18f
+        paintText.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        paintText.getTextBounds(cleanBarcode, 0, cleanBarcode.length, textBounds)
+        val codeX = (width - textBounds.width()) / 2f
+        canvas.drawText(cleanBarcode, codeX, 126f, paintText)
+        canvas.drawLine(10f, 132f, (width - 11).toFloat(), 132f, paintLine)
+
+        // 5. Kotak Harga Mencolok (y=138 s/d 204)
+        val paintBox = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+        }
+        canvas.drawRect(14f, 138f, (width - 15).toFloat(), 204f, paintBox)
+
+        paintText.textSize = 32f
+        paintText.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        val priceStr = Order.formatRupiah(price)
+        paintText.getTextBounds(priceStr, 0, priceStr.length, textBounds)
+        val priceX = (width - textBounds.width()) / 2f
+        val priceY = 138f + (66f + textBounds.height()) / 2f - 2f
+        canvas.drawText(priceStr, priceX, priceY, paintText)
+
+        // y=205..264 adalah area margin bawah stiker dan gap fisik 3mm
+        return bitmap
+    }
+
+    fun bitmapToEscPosRaster(bitmap: Bitmap): ByteArray {
+        val w = bitmap.width
+        val h = bitmap.height
+        val bytesPerRow = (w + 7) / 8
+        val out = ByteArrayOutputStream()
+
+        val xL = (bytesPerRow and 0xFF).toByte()
+        val xH = ((bytesPerRow shr 8) and 0xFF).toByte()
+        val yL = (h and 0xFF).toByte()
+        val yH = ((h shr 8) and 0xFF).toByte()
+        out.write(byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH))
+
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        for (y in 0 until h) {
+            for (byteIdx in 0 until bytesPerRow) {
+                var b = 0
+                for (bit in 0 until 8) {
+                    val x = byteIdx * 8 + bit
+                    if (x < w) {
+                        val color = pixels[y * w + x]
+                        val red = (color shr 16) and 0xFF
+                        val green = (color shr 8) and 0xFF
+                        val blue = color and 0xFF
+                        val gray = (red * 299 + green * 587 + blue * 114) / 1000
+                        if (gray < 128) {
+                            b = b or (1 shl (7 - bit))
+                        }
+                    }
+                }
+                out.write(b)
+            }
+        }
+        return out.toByteArray()
+    }
+
+    fun createBlankEscPosRaster(width: Int = 384, height: Int = 284): ByteArray {
+        val bytesPerRow = (width + 7) / 8
+        val out = ByteArrayOutputStream()
+        val xL = (bytesPerRow and 0xFF).toByte()
+        val xH = ((bytesPerRow shr 8) and 0xFF).toByte()
+        val yL = (height and 0xFF).toByte()
+        val yH = ((height shr 8) and 0xFF).toByte()
+        out.write(byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH))
+        val blankRow = ByteArray(bytesPerRow)
+        for (y in 0 until height) {
+            out.write(blankRow)
+        }
+        return out.toByteArray()
+    }
+
+    fun buildProductBarcodeTag55x30Raster(
+        product: Product,
+        storeName: String,
+        quantity: Int = 1
+    ): ByteArray {
+        val safeQty = quantity.coerceIn(1, 10)
+        val out = ByteArrayOutputStream()
+        // Reset printer 1x di awal
+        out.write(CMD_INIT)
+
+        val bitmap = renderProductBarcodeTag55x30Bitmap(
+            storeName = storeName,
+            productName = product.name,
+            barcode = if (product.barcode.isNotEmpty()) product.barcode else product.sku,
+            price = product.price
+        )
+        val labelRaster = bitmapToEscPosRaster(bitmap)
+
+        for (i in 0 until safeQty) {
+            out.write(labelRaster)
+        }
+
+        // 1 stiker penutup kosong (284 dots / 35.5 mm) untuk pendorongan ke pisau sobek
+        out.write(createBlankEscPosRaster(384, 284))
 
         return out.toByteArray()
     }

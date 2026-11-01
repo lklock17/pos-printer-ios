@@ -36,7 +36,8 @@ enum class TargetPrinterDest(val title: String, val subtitle: String) {
 }
 
 enum class LabelPrintFormat(val title: String, val subtitle: String) {
-    STICKER_58X40("Stiker 58x40 mm", "Stiker Tempel"),
+    STICKER_55X30("Stiker 55x30 mm", "Stiker Tempel Mini"),
+    STICKER_58X40("Stiker 58x40 mm", "Stiker Tempel Standar"),
     LABEL_4X6("Label 4x6 Inci", "Resi Ekspedisi"),
     SLIP_58("Struk 58mm", "Kertas Roll POS")
 }
@@ -284,8 +285,9 @@ fun ShippingLabelScreen() {
                 }
             }
 
-            // 3. Visual Preview (Stiker 58x40 / Label 4x6 / Struk 58mm)
+            // 3. Visual Preview (Stiker 55x30 / Stiker 58x40 / Label 4x6 / Struk 58mm)
             when (selectedFormat) {
+                LabelPrintFormat.STICKER_55X30,
                 LabelPrintFormat.STICKER_58X40 -> {
                     Sticker58x40Preview(activeShipping, DataManager.storeConfig.value)
                 }
@@ -328,7 +330,9 @@ fun ShippingLabelScreen() {
                     }
                 }
             } else {
+                val isSticker = selectedFormat == LabelPrintFormat.STICKER_55X30 || selectedFormat == LabelPrintFormat.STICKER_58X40
                 val printTitle = when (selectedFormat) {
+                    LabelPrintFormat.STICKER_55X30 -> "Cetak Stiker 55x30 mm (TSPL)"
                     LabelPrintFormat.STICKER_58X40 -> "Cetak Stiker 58x40 mm (TSPL)"
                     LabelPrintFormat.LABEL_4X6 -> "Cetak Label 4x6 Thermal (TSPL)"
                     LabelPrintFormat.SLIP_58 -> "Cetak Resi ke Struk POS (Auto-Cut)"
@@ -336,8 +340,8 @@ fun ShippingLabelScreen() {
 
                 LiquidGlassButton(
                     text = printTitle,
-                    icon = if (selectedFormat == LabelPrintFormat.STICKER_58X40) Icons.Default.LocalOffer else Icons.Default.Print,
-                    gradientColors = if (selectedFormat == LabelPrintFormat.STICKER_58X40)
+                    icon = if (isSticker) Icons.Default.LocalOffer else Icons.Default.Print,
+                    gradientColors = if (isSticker)
                         listOf(Color(0xFF059669), Color(0xFF10B981))
                     else
                         listOf(Color(0xFF2563EB), Color(0xFF7C3AED)),
@@ -466,6 +470,7 @@ fun ShippingLabelScreen() {
                             }
                         } else {
                             val data = when (selectedFormat) {
+                                LabelPrintFormat.STICKER_55X30 -> PrinterEngine.buildTSPLSticker55x30Data(workingOrder, DataManager.storeConfig.value)
                                 LabelPrintFormat.STICKER_58X40 -> PrinterEngine.buildTSPLSticker58x40Data(workingOrder, DataManager.storeConfig.value)
                                 LabelPrintFormat.LABEL_4X6 -> PrinterEngine.buildTSPLLabelData(workingOrder, DataManager.storeConfig.value)
                                 LabelPrintFormat.SLIP_58 -> PrinterEngine.buildShippingSlip58Data(workingOrder, DataManager.storeConfig.value)
