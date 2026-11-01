@@ -1,8 +1,13 @@
 package com.lklock17.omnipos
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +21,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.lklock17.omnipos.services.BluetoothPrinterManager
 import com.lklock17.omnipos.services.DataManager
 import com.lklock17.omnipos.ui.screens.*
 import com.lklock17.omnipos.ui.theme.OmniPOSTheme
@@ -44,6 +51,39 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainApp() {
     var selectedTab by remember { mutableStateOf(MainTab.CASHIER) }
+    val context = LocalContext.current
+
+    // Request Bluetooth runtime permissions safely on startup
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            BluetoothPrinterManager.refreshPairedDevices(context)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.BLUETOOTH
+            )
+        }
+        val needed = permissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (needed.isNotEmpty()) {
+            permissionLauncher.launch(needed.toTypedArray())
+        } else {
+            BluetoothPrinterManager.refreshPairedDevices(context)
+        }
+    }
 
     Scaffold(
         bottomBar = {

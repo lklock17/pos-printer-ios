@@ -210,15 +210,25 @@ fun ProductScreen() {
                     Toast.makeText(context, "Printer belum terhubung! Silakan hubungkan Kassen MT200A di tab Pengaturan.", Toast.LENGTH_LONG).show()
                 } else {
                     val storeName = DataManager.storeConfig.value.storeName
-                    val rasterBytes = PrinterEngine.buildProductBarcodeTag55x30Raster(prod, storeName, qty)
-                    BluetoothPrinterManager.sendData(rasterBytes) { success, errMsg ->
-                        if (success) {
-                            Toast.makeText(context, "Berhasil mencetak $qty stiker barcode untuk ${prod.name}!", Toast.LENGTH_SHORT).show()
-                            productToPrintBarcode = null
-                        } else {
-                            Toast.makeText(context, "Gagal mencetak: $errMsg", Toast.LENGTH_LONG).show()
+                    val singleLabelRaster = PrinterEngine.buildSingleProductBarcodeTag55x30Raster(prod, storeName)
+                    val tearOffBlank = PrinterEngine.createBlankEscPosRaster(384, 284)
+                    val count = qty.coerceIn(1, 10)
+                    val labels = List(count) { singleLabelRaster }
+
+                    Toast.makeText(context, "Mencetak $count stiker barcode untuk ${prod.name}...", Toast.LENGTH_SHORT).show()
+                    BluetoothPrinterManager.sendBatchLabels(
+                        labels = labels,
+                        tearOffRaster = tearOffBlank,
+                        interLabelDelayMs = 1300L,
+                        onResult = { success, errMsg ->
+                            if (success) {
+                                Toast.makeText(context, "Selesai mencetak $count stiker!", Toast.LENGTH_SHORT).show()
+                                productToPrintBarcode = null
+                            } else {
+                                Toast.makeText(context, "Gagal mencetak: $errMsg", Toast.LENGTH_LONG).show()
+                            }
                         }
-                    }
+                    )
                 }
             }
         )

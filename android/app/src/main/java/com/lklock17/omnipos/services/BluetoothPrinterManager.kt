@@ -1,12 +1,16 @@
 package com.lklock17.omnipos.services
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.io.OutputStream
 import java.util.UUID
@@ -34,11 +38,38 @@ object BluetoothPrinterManager {
         BluetoothAdapter.getDefaultAdapter()
     }
 
+    fun hasBluetoothPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    fun getSafeDeviceName(device: BluetoothDevice): String {
+        return try {
+            device.name ?: device.address
+        } catch (_: SecurityException) {
+            device.address
+        } catch (_: Exception) {
+            device.address
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun refreshPairedDevices(context: Context) {
+        if (!hasBluetoothPermission(context)) {
+            return
+        }
         pairedDevices.clear()
-        bluetoothAdapter?.bondedDevices?.let {
-            pairedDevices.addAll(it)
+        try {
+            bluetoothAdapter?.bondedDevices?.let {
+                pairedDevices.addAll(it)
+            }
+        } catch (_: SecurityException) {
+            return
+        } catch (_: Exception) {
+            return
         }
 
         // Cek jika belum terhubung, coba auto-connect ke printer terakhir
@@ -73,7 +104,10 @@ object BluetoothPrinterManager {
                 internalDisconnect()
 
                 val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-                bluetoothAdapter?.cancelDiscovery()
+                try {
+                    bluetoothAdapter?.cancelDiscovery()
+                } catch (_: SecurityException) {}
+
                 socket.connect()
 
                 currentSocket = socket
@@ -82,7 +116,7 @@ object BluetoothPrinterManager {
                 withContext(Dispatchers.Main) {
                     isConnected.value = true
                     isConnecting.value = false
-                    connectedDeviceName.value = device.name ?: device.address
+                    connectedDeviceName.value = getSafeDeviceName(device)
                     onResult(true, null)
                 }
 
@@ -208,6 +242,53 @@ object BluetoothPrinterManager {
             try {
                 outputStream?.write(data)
                 outputStream?.flush()
+                withContext(Dispatchers.Main) {
+                    onResult(true, null)
+                }
+            } catch (e: Exception) {
+                internalDisconnect()
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Koneksi printer terputus: ${e.localizedMessage}")
+                }
+                if (!isManualDisconnect) {
+                    startAutoReconnect(null)
+                }
+            }
+        }
+    }
+
+    /**
+     * Mengirim label stiker secara berurutan dengan jeda motor antar stiker
+     * untuk mencegah buffer overflow pada Kassen MT200A (RAM printer terbatas)
+     */
+    fun sendBatchLabels(
+        labels: List<ByteArray>,
+        tearOffRaster: ByteArray? = null,
+        interLabelDelayMs: Long = 1300L,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        if (!isConnected.value || outputStream == null) {
+            onResult(false, "Printer belum terhubung. Silakan hubungkan printer Bluetooth terlebih dahulu.")
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val total = labels.size
+                for (idx in labels.indices) {
+                    withContext(Dispatchers.Main) {
+                        onProgress(idx + 1, total)
+                    }
+                    outputStream?.write(labels[idx])
+                    outputStream?.flush()
+                    delay(interLabelDelayMs)
+                }
+                if (tearOffRaster != null) {
+                    outputStream?.write(tearOffRaster)
+                    outputStream?.flush()
+                    delay(1000L)
+                }
                 withContext(Dispatchers.Main) {
                     onResult(true, null)
                 }

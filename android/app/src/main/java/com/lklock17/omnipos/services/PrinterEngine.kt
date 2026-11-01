@@ -229,61 +229,16 @@ object PrinterEngine {
         return sb.toString().toByteArray(Charset.forName("UTF-8"))
     }
 
-    // MARK: - 3a. Build TSPL Sticker 55x30 mm (Stiker Thermal Mini Kassen MT200A)
+    // MARK: - 3a. Build ESC/POS Raster Sticker 55x30 mm (Stiker Thermal Mini Kassen MT200A)
+    // Menggunakan ESC/POS Raster murni (GS v 0) dengan step pitch 264 dots (33mm) & 284 dots tear-off feed
     fun buildTSPLSticker55x30Data(order: Order, config: StoreConfig): ByteArray {
-        val ship = order.shippingInfo ?: return ByteArray(0)
-        val sb = StringBuilder()
-
-        sb.append("SIZE 55 mm, 30 mm\r\n")
-        sb.append("GAP 3 mm, 0 mm\r\n")
-        sb.append("DIRECTION 1\r\n")
-        sb.append("CLS\r\n")
-
-        // Border luar (440x240 dots)
-        sb.append("BOX 6,6,434,234,2\r\n")
-
-        // Header Kurir & Layanan & COD
-        sb.append("TEXT 12,10,\"3\",0,1,1,\"${ship.courier.uppercase()}\"\r\n")
-        val serviceShort = ship.service.take(7).uppercase()
-        sb.append("TEXT 230,12,\"2\",0,1,1,\"[$serviceShort]\"\r\n")
-        if (ship.isCOD) {
-            sb.append("TEXT 330,10,\"3\",0,1,1,\"COD\"\r\n")
-        } else {
-            sb.append("TEXT 320,12,\"2\",0,1,1,\"NON-COD\"\r\n")
-        }
-        sb.append("BOX 6,32,434,34,1\r\n")
-
-        // Barcode Nomor Resi
-        val tracking = if (ship.trackingNumber.isEmpty()) order.invoiceNumber else ship.trackingNumber
-        sb.append("BARCODE 12,38,\"128\",32,1,0,2,2,\"$tracking\"\r\n")
-        sb.append("TEXT 12,73,\"2\",0,1,1,\"RESI: $tracking\"\r\n")
-        sb.append("BOX 6,92,434,94,1\r\n")
-
-        // Penerima
-        sb.append("TEXT 12,98,\"3\",0,1,1,\"Kpd: ${ship.recipientName.take(20)}\"\r\n")
-        sb.append("TEXT 12,124,\"2\",0,1,1,\"Telp: ${ship.recipientPhone}\"\r\n")
-
-        val rAddr = ship.recipientAddress
-        val line1 = rAddr.take(32)
-        val line2 = if (rAddr.length > 32) rAddr.substring(32).take(32) else ""
-        sb.append("TEXT 12,144,\"2\",0,1,1,\"$line1\"\r\n")
-        if (line2.isNotEmpty()) {
-            sb.append("TEXT 12,164,\"2\",0,1,1,\"$line2\"\r\n")
-        }
-        sb.append("BOX 6,186,434,188,1\r\n")
-
-        // Footer Pengirim & COD Nominal
-        val sName = if (ship.senderName.isEmpty()) config.defaultSenderName else ship.senderName
-        if (ship.isCOD) {
-            sb.append("TEXT 12,192,\"2\",0,1,1,\"COD: ${Order.formatRupiah(ship.codAmount)}\"\r\n")
-            sb.append("TEXT 12,212,\"1\",0,1,1,\"Dr: ${sName.take(16)} | ${ship.postalCode}\"\r\n")
-        } else {
-            sb.append("TEXT 12,192,\"2\",0,1,1,\"Dr: ${sName.take(16)}\"\r\n")
-            sb.append("TEXT 12,212,\"1\",0,1,1,\"Pos: ${ship.postalCode} | OmniPOS\"\r\n")
-        }
-
-        sb.append("PRINT 1,1\r\n")
-        return sb.toString().toByteArray(Charset.forName("UTF-8"))
+        val bitmap = renderShippingSticker55x30Bitmap(order, config)
+        val labelRaster = bitmapToEscPosRaster(bitmap)
+        val out = ByteArrayOutputStream()
+        out.write(CMD_INIT)
+        out.write(labelRaster)
+        out.write(createBlankEscPosRaster(384, 284)) // 1 stiker penutup untuk pisau sobek
+        return out.toByteArray()
     }
 
     // MARK: - 3. Build TSPL Sticker 58x40 mm (Stiker Thermal Tempel)
@@ -581,6 +536,121 @@ object PrinterEngine {
             out.write(blankRow)
         }
         return out.toByteArray()
+    }
+
+    // MARK: - 3b. Render Shipping Sticker 55x30 Bitmap (Pure Graphical ESC/POS Raster)
+    fun renderShippingSticker55x30Bitmap(order: Order, config: StoreConfig): Bitmap {
+        val ship = order.shippingInfo ?: ShippingInfo(recipientName = "Customer", recipientAddress = "-", recipientPhone = "-")
+        val width = 384
+        val height = 264 // 264 dots = 33.0 mm
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+
+        val paintText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val paintLine = Paint().apply {
+            color = Color.BLACK
+            strokeWidth = 1f
+        }
+
+        // 1. Header: Kurir & Layanan
+        paintText.textSize = 20f
+        val courierHeader = "${ship.courier.uppercase()} [${ship.service.take(8).uppercase()}]"
+        canvas.drawText(courierHeader, 12f, 26f, paintText)
+        if (ship.isCOD) {
+            paintText.textSize = 18f
+            canvas.drawText("COD", 310f, 26f, paintText)
+        }
+        canvas.drawLine(10f, 34f, (width - 11).toFloat(), 34f, paintLine)
+
+        // 2. Barcode Resi (y=40..84)
+        val tracking = if (ship.trackingNumber.isEmpty()) order.invoiceNumber else ship.trackingNumber
+        val cleanTracking = tracking.filter { it.code in 32..126 }.ifEmpty { "00000000" }
+        val codes = mutableListOf<Int>(104)
+        var csum = 104
+        cleanTracking.forEachIndexed { i, ch ->
+            val v = ch.code - 32
+            codes.add(v)
+            csum += v * (i + 1)
+        }
+        codes.add(csum % 103)
+        codes.add(106)
+        val pattern = codes.joinToString("") { CODE128_PATTERNS[it] }
+        var moduleW = 2
+        var barTotalW = pattern.sumOf { it.digitToInt() } * moduleW
+        if (barTotalW > width - 24) {
+            moduleW = 1
+            barTotalW = pattern.sumOf { it.digitToInt() } * moduleW
+        }
+        val startX = maxOf(10, (width - barTotalW) / 2)
+        var curX = startX
+        val barY = 40
+        val barH = 44
+        val paintBar = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
+        for (i in pattern.indices) {
+            val w = pattern[i].digitToInt() * moduleW
+            if (i % 2 == 0) {
+                canvas.drawRect(curX.toFloat(), barY.toFloat(), (curX + w).toFloat(), (barY + barH).toFloat(), paintBar)
+            }
+            curX += w
+        }
+
+        // 3. Nomor Resi (y=98)
+        paintText.textSize = 17f
+        paintText.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        val resiText = "RESI: $cleanTracking"
+        val textBounds = Rect()
+        paintText.getTextBounds(resiText, 0, resiText.length, textBounds)
+        canvas.drawText(resiText, (width - textBounds.width()) / 2f, 100f, paintText)
+        canvas.drawLine(10f, 108f, (width - 11).toFloat(), 108f, paintLine)
+
+        // 4. Penerima (y=126)
+        paintText.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        paintText.textSize = 15f
+        canvas.drawText("Kpd: ${ship.recipientName.take(24)} (${ship.recipientPhone})", 12f, 126f, paintText)
+
+        paintText.textSize = 13f
+        paintText.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+        val rAddr = ship.recipientAddress
+        val line1 = rAddr.take(34)
+        val line2 = if (rAddr.length > 34) rAddr.substring(34).take(34) else ""
+        canvas.drawText(line1, 12f, 144f, paintText)
+        if (line2.isNotEmpty()) {
+            canvas.drawText(line2, 12f, 160f, paintText)
+        }
+
+        // 5. Footer: Pengirim & COD
+        canvas.drawLine(10f, 172f, (width - 11).toFloat(), 172f, paintLine)
+        paintText.textSize = 13f
+        val sName = if (ship.senderName.isEmpty()) config.defaultSenderName else ship.senderName
+        canvas.drawText("Dr: ${sName.take(18)}", 12f, 192f, paintText)
+        if (ship.isCOD) {
+            paintText.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            val codText = "COD: ${Order.formatRupiah(ship.codAmount)}"
+            paintText.getTextBounds(codText, 0, codText.length, textBounds)
+            canvas.drawText(codText, (width - 12f - textBounds.width()), 192f, paintText)
+        }
+
+        return bitmap
+    }
+
+    fun buildSingleProductBarcodeTag55x30Raster(
+        product: Product,
+        storeName: String
+    ): ByteArray {
+        val bitmap = renderProductBarcodeTag55x30Bitmap(
+            storeName = storeName,
+            productName = product.name,
+            barcode = if (product.barcode.isNotEmpty()) product.barcode else product.sku,
+            price = product.price
+        )
+        return bitmapToEscPosRaster(bitmap)
     }
 
     fun buildProductBarcodeTag55x30Raster(

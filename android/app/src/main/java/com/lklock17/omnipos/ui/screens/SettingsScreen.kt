@@ -1,8 +1,13 @@
 package com.lklock17.omnipos.ui.screens
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.lklock17.omnipos.models.Order
 import com.lklock17.omnipos.models.OrderItem
 import com.lklock17.omnipos.models.Product
@@ -36,6 +42,17 @@ import com.lklock17.omnipos.ui.components.LiquidGlassCard
 fun SettingsScreen() {
     val context = LocalContext.current
     val config = DataManager.storeConfig.value
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            BluetoothPrinterManager.refreshPairedDevices(context)
+        } else {
+            Toast.makeText(context, "Izin Bluetooth diperlukan untuk mencari printer.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var storeName by remember { mutableStateOf(config.storeName) }
     var storeAddress by remember { mutableStateOf(config.storeAddress) }
@@ -103,7 +120,18 @@ fun SettingsScreen() {
                         }
                     } else {
                         Button(
-                            onClick = { BluetoothPrinterManager.refreshPairedDevices(context) },
+                            onClick = {
+                                if (!BluetoothPrinterManager.hasBluetoothPermission(context)) {
+                                    val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+                                    } else {
+                                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH)
+                                    }
+                                    permissionLauncher.launch(perms)
+                                } else {
+                                    BluetoothPrinterManager.refreshPairedDevices(context)
+                                }
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
                         ) {
                             Text("Scan Ulang", fontSize = 11.sp)
@@ -127,7 +155,8 @@ fun SettingsScreen() {
                         BluetoothPrinterManager.pairedDevices.forEach { dev ->
                             DeviceRowItem(device = dev) {
                                 BluetoothPrinterManager.connectToDevice(dev, context) { ok, err ->
-                                    Toast.makeText(context, if (ok) "Terhubung ke ${dev.name}!" else err ?: "Gagal terhubung.", Toast.LENGTH_SHORT).show()
+                                    val devName = BluetoothPrinterManager.getSafeDeviceName(dev)
+                                    Toast.makeText(context, if (ok) "Terhubung ke $devName!" else err ?: "Gagal terhubung.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -269,8 +298,9 @@ private fun DeviceRowItem(device: BluetoothDevice, onConnect: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            val devName = remember(device) { BluetoothPrinterManager.getSafeDeviceName(device) }
             Column {
-                Text(device.name ?: "Unknown Device", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                Text(devName, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
                 Text(device.address, fontSize = 11.sp, color = Color.Gray)
             }
             Text("Hubungkan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
