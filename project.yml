@@ -3,7 +3,6 @@ options:
   bundleIdPrefix: com.lklock17
   deploymentTarget:
     iOS: "15.0"
-  xcodeVersion: "15.0"
 
 settings:
   base:
