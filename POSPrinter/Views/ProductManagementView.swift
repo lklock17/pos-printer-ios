@@ -339,6 +339,7 @@ struct PrintBarcodeTagSheet: View {
     @State private var quantity: Int = 1
     @State private var statusMessage: String = ""
     @State private var showAlert: Bool = false
+    @State private var isPrinting: Bool = false
 
     var barcodeText: String {
         product.barcode.isEmpty ? product.sku : product.barcode
@@ -400,8 +401,9 @@ struct PrintBarcodeTagSheet: View {
                             Button(action: { if quantity > 1 { quantity -= 1 } }) {
                                 Image(systemName: "minus.circle.fill")
                                     .font(.system(size: 32))
-                                    .foregroundColor(quantity > 1 ? .cyan : .gray)
+                                    .foregroundColor(quantity > 1 && !isPrinting ? .cyan : .gray)
                             }
+                            .disabled(quantity <= 1 || isPrinting)
 
                             Text("\(quantity)")
                                 .font(.system(size: 28, weight: .bold))
@@ -411,8 +413,9 @@ struct PrintBarcodeTagSheet: View {
                             Button(action: { if quantity < 10 { quantity += 1 } }) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 32))
-                                    .foregroundColor(quantity < 10 ? .cyan : .gray)
+                                    .foregroundColor(quantity < 10 && !isPrinting ? .cyan : .gray)
                             }
+                            .disabled(quantity >= 10 || isPrinting)
                         }
 
                         Text("• Otomatis memajukan 1 stiker penutup agar siap disobek.")
@@ -429,16 +432,25 @@ struct PrintBarcodeTagSheet: View {
                     // Tombol Cetak
                     Button(action: printStickers) {
                         HStack {
-                            Image(systemName: "printer.fill")
-                            Text("Cetak \(quantity) Stiker ke Kassen MT200A")
-                                .fontWeight(.bold)
+                            if isPrinting {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .padding(.trailing, 6)
+                                Text(statusMessage.isEmpty ? "Sedang Mencetak..." : statusMessage)
+                                    .fontWeight(.bold)
+                            } else {
+                                Image(systemName: "printer.fill")
+                                Text("Cetak \(quantity) Stiker ke Kassen MT200A")
+                                    .fontWeight(.bold)
+                            }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.green)
+                        .background(isPrinting ? Color.gray : Color.green)
                         .foregroundColor(.white)
                         .cornerRadius(12)
                     }
+                    .disabled(isPrinting)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 20)
                 }
@@ -450,7 +462,8 @@ struct PrintBarcodeTagSheet: View {
                     Button("Tutup") {
                         presentationMode.wrappedValue.dismiss()
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(isPrinting ? .gray : .white)
+                    .disabled(isPrinting)
                 }
             }
             .alert(isPresented: $showAlert) {
@@ -470,11 +483,31 @@ struct PrintBarcodeTagSheet: View {
             return
         }
 
-        let storeName = dataManager.storeConfig.storeName
-        let payload = PrinterEngine.buildProductBarcodeTag55x30Raster(product: product, storeName: storeName, quantity: quantity)
-        btManager.sendData(payload)
-        statusMessage = "Berhasil mengirim \(quantity) stiker barcode ke printer!"
-        showAlert = true
+        let storeName = dataManager.storeConfig.storeName.isEmpty ? "OMNIPOS STORE" : dataManager.storeConfig.storeName
+        let singleLabel = PrinterEngine.buildSingleProductBarcodeTag55x30Raster(product: product, storeName: storeName)
+        let labels = Array(repeating: singleLabel, count: quantity)
+        let tearOff = PrinterEngine.createBlankEscPosRaster(width: 384, height: 284)
+
+        isPrinting = true
+        statusMessage = "Sedang mencetak 1 dari \(quantity)..."
+
+        btManager.sendBatchLabels(
+            labels: labels,
+            tearOffRaster: tearOff,
+            interLabelDelay: 1.3,
+            onProgress: { current, total in
+                statusMessage = "Sedang mencetak \(current) dari \(total)..."
+            },
+            completion: { success, error in
+                isPrinting = false
+                if success {
+                    statusMessage = "Berhasil mencetak \(quantity) stiker barcode ke Kassen MT200A!"
+                } else {
+                    statusMessage = error ?? "Gagal mencetak stiker barcode."
+                }
+                showAlert = true
+            }
+        )
     }
 }
 

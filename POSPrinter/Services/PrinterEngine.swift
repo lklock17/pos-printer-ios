@@ -453,6 +453,207 @@ public class PrinterEngine {
         "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
     ]
 
+    public static func renderProductBarcodeTag55x30Raster(
+        storeName: String,
+        productName: String,
+        barcode: String,
+        price: Double
+    ) -> Data {
+        let width = 384
+        let height = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
+        let bytesPerRow = 48 // 384 dots / 8 = 48 bytes per row
+
+        // Alokasikan memory RGBA 384 x 264 murni tanpa pengaruh skala Retina layar
+        let rgbaBytesPerRow = width * 4
+        var rgbaPixels = [UInt8](repeating: 255, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+
+        guard let ctx = CGContext(
+            data: &rgbaPixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: rgbaBytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return Data()
+        }
+
+        // Setup koordinat: origin di (0,0) kiri-atas, Y bertambah ke bawah (0..264)
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1.0, y: -1.0)
+
+        UIGraphicsPushContext(ctx)
+
+        // Clear background putih
+        ctx.setFillColor(UIColor.white.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        // 1. Nama Toko (y=14)
+        let storeUpper = (storeName.isEmpty ? "OMNIPOS STORE" : storeName).uppercased()
+        let storeFont = UIFont.boldSystemFont(ofSize: 15)
+        let storeAttrs: [NSAttributedString.Key: Any] = [
+            .font: storeFont,
+            .foregroundColor: UIColor.black
+        ]
+        let storeSize = storeUpper.size(withAttributes: storeAttrs)
+        let storeRect = CGRect(x: (CGFloat(width) - storeSize.width) / 2, y: 14, width: storeSize.width, height: storeSize.height)
+        storeUpper.draw(in: storeRect, withAttributes: storeAttrs)
+
+        // Divider Line 1 (y=34)
+        ctx.setStrokeColor(UIColor.black.cgColor)
+        ctx.setLineWidth(1)
+        ctx.move(to: CGPoint(x: 10, y: 34))
+        ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 34))
+        ctx.strokePath()
+
+        // 2. Nama Produk (y=38)
+        let dispName = String(productName.prefix(24))
+        let prodFont = UIFont.boldSystemFont(ofSize: 18)
+        let prodAttrs: [NSAttributedString.Key: Any] = [
+            .font: prodFont,
+            .foregroundColor: UIColor.black
+        ]
+        let prodSize = dispName.size(withAttributes: prodAttrs)
+        let prodRect = CGRect(x: (CGFloat(width) - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height)
+        dispName.draw(in: prodRect, withAttributes: prodAttrs)
+
+        // 3. Barcode Code 128 (y=64, h=44)
+        let cleanBc = barcode.filter { $0.asciiValue != nil && $0.asciiValue! >= 32 && $0.asciiValue! <= 126 }
+        let finalBc = cleanBc.isEmpty ? "00000000" : cleanBc
+        var codes: [Int] = [104] // Start B
+        var csum = 104
+        for (i, char) in finalBc.enumerated() {
+            let v = Int(char.asciiValue!) - 32
+            codes.append(v)
+            csum += v * (i + 1)
+        }
+        codes.append(csum % 103)
+        codes.append(106) // Stop
+
+        var pattern = ""
+        for code in codes {
+            if code >= 0 && code < code128Patterns.count {
+                pattern += code128Patterns[code]
+            }
+        }
+
+        var moduleW: CGFloat = 2
+        let totalModules = pattern.reduce(0) { $0 + (Int(String($1)) ?? 1) }
+        var barTotalW = CGFloat(totalModules) * moduleW
+        if barTotalW > CGFloat(width) - 24 {
+            moduleW = 1
+            barTotalW = CGFloat(totalModules) * moduleW
+        }
+
+        let startX = max(10, (CGFloat(width) - barTotalW) / 2)
+        var curX = startX
+        let barY: CGFloat = 64
+        let barH: CGFloat = 44
+
+        ctx.setFillColor(UIColor.black.cgColor)
+        for (idx, char) in pattern.enumerated() {
+            let w = CGFloat(Int(String(char)) ?? 1) * moduleW
+            if idx % 2 == 0 {
+                ctx.fill(CGRect(x: curX, y: barY, width: w, height: barH))
+            }
+            curX += w
+        }
+
+        // 4. Barcode Teks (y=112)
+        let codeFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+        let codeAttrs: [NSAttributedString.Key: Any] = [
+            .font: codeFont,
+            .foregroundColor: UIColor.black
+        ]
+        let codeSize = finalBc.size(withAttributes: codeAttrs)
+        let codeRect = CGRect(x: (CGFloat(width) - codeSize.width) / 2, y: 112, width: codeSize.width, height: codeSize.height)
+        finalBc.draw(in: codeRect, withAttributes: codeAttrs)
+
+        // Divider Line 2 (y=132)
+        ctx.setStrokeColor(UIColor.black.cgColor)
+        ctx.setLineWidth(1)
+        ctx.move(to: CGPoint(x: 10, y: 132))
+        ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 132))
+        ctx.strokePath()
+
+        // 5. Price Box (y=138 s/d 204, height=66)
+        let boxRect = CGRect(x: 14, y: 138, width: CGFloat(width) - 28, height: 66)
+        ctx.setStrokeColor(UIColor.black.cgColor)
+        ctx.setLineWidth(2)
+        ctx.stroke(boxRect)
+
+        let priceStr = CurrencyHelper.format(price)
+        let priceFont = UIFont.boldSystemFont(ofSize: 26)
+        let priceAttrs: [NSAttributedString.Key: Any] = [
+            .font: priceFont,
+            .foregroundColor: UIColor.black
+        ]
+        let priceSize = priceStr.size(withAttributes: priceAttrs)
+        let priceRect = CGRect(
+            x: (CGFloat(width) - priceSize.width) / 2,
+            y: 138 + (66 - priceSize.height) / 2,
+            width: priceSize.width,
+            height: priceSize.height
+        )
+        priceStr.draw(in: priceRect, withAttributes: priceAttrs)
+
+        // y=205..264 adalah margin bawah stiker dan gap fisik 3mm
+
+        UIGraphicsPopContext()
+
+        // Buat Data ESC/POS Raster (GS v 0)
+        // Header: 1D 76 30 00 xL xH yL yH
+        // xL = 48 (0x30), xH = 0
+        // yL = 8 (0x08), yH = 1 (0x01) -> 264 dots
+        var rasterData = Data()
+        let xL = UInt8(bytesPerRow & 0xFF)
+        let xH = UInt8((bytesPerRow >> 8) & 0xFF)
+        let yL = UInt8(height & 0xFF)
+        let yH = UInt8((height >> 8) & 0xFF)
+        rasterData.append(contentsOf: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
+
+        // Ekstraksi 1-bit per pixel dari baris 0 sampai baris 263
+        // Karena transform translateBy(0, height) & scaleBy(1, -1),
+        // baris atas visual (y=0) tersimpan di y_cg = (height - 1)
+        for y in 0..<height {
+            let yCg = (height - 1) - y
+            for byteIdx in 0..<bytesPerRow {
+                var b: UInt8 = 0
+                for bit in 0..<8 {
+                    let x = byteIdx * 8 + bit
+                    if x < width {
+                        let offset = (yCg * width + x) * 4
+                        let r = Int(rgbaPixels[offset])
+                        let g = Int(rgbaPixels[offset + 1])
+                        let bCol = Int(rgbaPixels[offset + 2])
+                        let gray = (r * 299 + g * 587 + bCol * 114) / 1000
+                        if gray < 128 {
+                            b |= (1 << (7 - bit))
+                        }
+                    }
+                }
+                rasterData.append(b)
+            }
+        }
+
+        return rasterData
+    }
+
+    public static func buildSingleProductBarcodeTag55x30Raster(
+        product: Product,
+        storeName: String
+    ) -> Data {
+        let barcode = product.barcode.isEmpty ? product.sku : product.barcode
+        return renderProductBarcodeTag55x30Raster(
+            storeName: storeName,
+            productName: product.name,
+            barcode: barcode,
+            price: product.price
+        )
+    }
+
     public static func renderProductBarcodeTag55x30Image(
         storeName: String,
         productName: String,
@@ -460,10 +661,10 @@ public class PrinterEngine {
         price: Double
     ) -> UIImage {
         let width: CGFloat = 384
-        let height: CGFloat = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
+        let height: CGFloat = 264
         let size = CGSize(width: width, height: height)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0 // Pastikan 1:1 pixel (bukan Retina 2x/3x) agar ukuran dot thermal printer presisi 384x264
+        format.scale = 1.0
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
 
         return renderer.image { ctx in
@@ -471,39 +672,27 @@ public class PrinterEngine {
             cg.setFillColor(UIColor.white.cgColor)
             cg.fill(CGRect(origin: .zero, size: size))
 
-            // 1. Nama Toko (y=16)
             let storeUpper = (storeName.isEmpty ? "OMNIPOS STORE" : storeName).uppercased()
-            let storeFont = UIFont.boldSystemFont(ofSize: 13)
-            let storeAttrs: [NSAttributedString.Key: Any] = [
-                .font: storeFont,
-                .foregroundColor: UIColor.black
-            ]
+            let storeFont = UIFont.boldSystemFont(ofSize: 15)
+            let storeAttrs: [NSAttributedString.Key: Any] = [.font: storeFont, .foregroundColor: UIColor.black]
             let storeSize = storeUpper.size(withAttributes: storeAttrs)
-            let storeRect = CGRect(x: (width - storeSize.width) / 2, y: 16, width: storeSize.width, height: storeSize.height)
-            storeUpper.draw(in: storeRect, withAttributes: storeAttrs)
+            storeUpper.draw(in: CGRect(x: (width - storeSize.width) / 2, y: 14, width: storeSize.width, height: storeSize.height), withAttributes: storeAttrs)
 
-            // Divider Line 1
             cg.setStrokeColor(UIColor.black.cgColor)
             cg.setLineWidth(1)
             cg.move(to: CGPoint(x: 10, y: 34))
-            cg.addLine(to: CGPoint(x: width - 11, y: 34))
+            cg.addLine(to: CGPoint(x: width - 10, y: 34))
             cg.strokePath()
 
-            // 2. Nama Produk (y=38)
             let dispName = String(productName.prefix(24))
-            let prodFont = UIFont.boldSystemFont(ofSize: 16)
-            let prodAttrs: [NSAttributedString.Key: Any] = [
-                .font: prodFont,
-                .foregroundColor: UIColor.black
-            ]
+            let prodFont = UIFont.boldSystemFont(ofSize: 18)
+            let prodAttrs: [NSAttributedString.Key: Any] = [.font: prodFont, .foregroundColor: UIColor.black]
             let prodSize = dispName.size(withAttributes: prodAttrs)
-            let prodRect = CGRect(x: (width - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height)
-            dispName.draw(in: prodRect, withAttributes: prodAttrs)
+            dispName.draw(in: CGRect(x: (width - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height), withAttributes: prodAttrs)
 
-            // 3. Barcode Code 128 (y=64, h=44)
             let cleanBc = barcode.filter { $0.asciiValue != nil && $0.asciiValue! >= 32 && $0.asciiValue! <= 126 }
             let finalBc = cleanBc.isEmpty ? "00000000" : cleanBc
-            var codes: [Int] = [104] // Start B
+            var codes: [Int] = [104]
             var csum = 104
             for (i, char) in finalBc.enumerated() {
                 let v = Int(char.asciiValue!) - 32
@@ -511,7 +700,7 @@ public class PrinterEngine {
                 csum += v * (i + 1)
             }
             codes.append(csum % 103)
-            codes.append(106) // Stop
+            codes.append(106)
 
             var pattern = ""
             for code in codes {
@@ -530,64 +719,43 @@ public class PrinterEngine {
 
             let startX = max(10, (width - barTotalW) / 2)
             var curX = startX
-            let barY: CGFloat = 64
-            let barH: CGFloat = 44
-
             cg.setFillColor(UIColor.black.cgColor)
             for (idx, char) in pattern.enumerated() {
                 let w = CGFloat(Int(String(char)) ?? 1) * moduleW
                 if idx % 2 == 0 {
-                    cg.fill(CGRect(x: curX, y: barY, width: w, height: barH))
+                    cg.fill(CGRect(x: curX, y: 64, width: w, height: 44))
                 }
                 curX += w
             }
 
-            // 4. Barcode Teks (y=112)
-            let codeFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .bold)
-            let codeAttrs: [NSAttributedString.Key: Any] = [
-                .font: codeFont,
-                .foregroundColor: UIColor.black
-            ]
+            let codeFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+            let codeAttrs: [NSAttributedString.Key: Any] = [.font: codeFont, .foregroundColor: UIColor.black]
             let codeSize = finalBc.size(withAttributes: codeAttrs)
-            let codeRect = CGRect(x: (width - codeSize.width) / 2, y: 112, width: codeSize.width, height: codeSize.height)
-            finalBc.draw(in: codeRect, withAttributes: codeAttrs)
+            finalBc.draw(in: CGRect(x: (width - codeSize.width) / 2, y: 112, width: codeSize.width, height: codeSize.height), withAttributes: codeAttrs)
 
-            // Divider Line 2
             cg.setStrokeColor(UIColor.black.cgColor)
             cg.setLineWidth(1)
             cg.move(to: CGPoint(x: 10, y: 132))
-            cg.addLine(to: CGPoint(x: width - 11, y: 132))
+            cg.addLine(to: CGPoint(x: width - 10, y: 132))
             cg.strokePath()
 
-            // 5. Price Box (y=138 s/d 204, height=66)
-            let boxRect = CGRect(x: 14, y: 138, width: width - 29, height: 66)
-            cg.setStrokeColor(UIColor.black.cgColor)
-            cg.setLineWidth(2)
+            let boxRect = CGRect(x: 14, y: 138, width: width - 28, height: 66)
             cg.stroke(boxRect)
 
             let priceStr = CurrencyHelper.format(price)
-            let priceFont = UIFont.boldSystemFont(ofSize: 22)
-            let priceAttrs: [NSAttributedString.Key: Any] = [
-                .font: priceFont,
-                .foregroundColor: UIColor.black
-            ]
+            let priceFont = UIFont.boldSystemFont(ofSize: 26)
+            let priceAttrs: [NSAttributedString.Key: Any] = [.font: priceFont, .foregroundColor: UIColor.black]
             let priceSize = priceStr.size(withAttributes: priceAttrs)
-            let priceRect = CGRect(
-                x: (width - priceSize.width) / 2,
-                y: 138 + (66 - priceSize.height) / 2,
-                width: priceSize.width,
-                height: priceSize.height
-            )
-            priceStr.draw(in: priceRect, withAttributes: priceAttrs)
-
-            // y=205 s/d 264 adalah margin bawah stiker dan gap fisik 3mm
+            priceStr.draw(in: CGRect(x: (width - priceSize.width) / 2, y: 138 + (66 - priceSize.height) / 2, width: priceSize.width, height: priceSize.height), withAttributes: priceAttrs)
         }
     }
 
     public static func imageToEscPosRaster(image: UIImage) -> Data {
         guard let cgImage = image.cgImage else { return Data() }
-        let width = cgImage.width
-        let height = cgImage.height
+        let targetWidth = 384
+        let aspect = CGFloat(cgImage.height) / CGFloat(cgImage.width)
+        let width = targetWidth
+        let height = Int(CGFloat(width) * aspect)
         let bytesPerRow = (width + 7) / 8
 
         var data = Data()
@@ -597,26 +765,34 @@ public class PrinterEngine {
         let yH = UInt8((height >> 8) & 0xFF)
         data.append(contentsOf: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
 
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.genericGrayGamma2_2) else { return Data() }
-        var rawPixels = [UInt8](repeating: 255, count: width * height)
-        let context = CGContext(
-            data: &rawPixels,
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var rgbaPixels = [UInt8](repeating: 255, count: width * height * 4)
+        guard let context = CGContext(
+            data: &rgbaPixels,
             width: width,
             height: height,
             bitsPerComponent: 8,
-            bytesPerRow: width,
+            bytesPerRow: width * 4,
             space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        )
-        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return Data() }
+
+        context.setFillColor(UIColor.white.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         for y in 0..<height {
+            let yCg = (height - 1) - y
             for byteIdx in 0..<bytesPerRow {
                 var b: UInt8 = 0
                 for bit in 0..<8 {
                     let x = byteIdx * 8 + bit
                     if x < width {
-                        let gray = rawPixels[y * width + x]
+                        let offset = (yCg * width + x) * 4
+                        let r = Int(rgbaPixels[offset])
+                        let g = Int(rgbaPixels[offset + 1])
+                        let bCol = Int(rgbaPixels[offset + 2])
+                        let gray = (r * 299 + g * 587 + bCol * 114) / 1000
                         if gray < 128 {
                             b |= (1 << (7 - bit))
                         }
@@ -652,14 +828,7 @@ public class PrinterEngine {
         var data = Data()
         data.append(contentsOf: cmdInit)
 
-        let barcode = product.barcode.isEmpty ? product.sku : product.barcode
-        let image = renderProductBarcodeTag55x30Image(
-            storeName: storeName,
-            productName: product.name,
-            barcode: barcode,
-            price: product.price
-        )
-        let labelRaster = imageToEscPosRaster(image: image)
+        let labelRaster = buildSingleProductBarcodeTag55x30Raster(product: product, storeName: storeName)
 
         for _ in 0..<safeQty {
             data.append(labelRaster)

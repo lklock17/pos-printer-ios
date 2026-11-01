@@ -278,4 +278,69 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             }
         }
     }
+
+    // MARK: - Kirim Batch Label Berurutan (Mencegah Buffer Overflow Kassen MT200A)
+    func sendBatchLabels(
+        labels: [Data],
+        tearOffRaster: Data? = nil,
+        interLabelDelay: TimeInterval = 1.3,
+        onProgress: ((Int, Int) -> Void)? = nil,
+        completion: ((Bool, String?) -> Void)? = nil
+    ) {
+        guard let peripheral = targetPeripheral, let char = writeCharacteristic else {
+            DispatchQueue.main.async {
+                self.statusMessage = "Printer belum terhubung atau karakteristik tidak ditemukan."
+                completion?(false, "Printer belum terhubung atau karakteristik tidak ditemukan.")
+            }
+            return
+        }
+
+        let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+        let chunkSize = 120
+        let total = labels.count
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 1. Reset command 1x di awal
+            let initCmd = Data([0x1B, 0x40])
+            peripheral.writeValue(initCmd, for: char, type: writeType)
+            Thread.sleep(forTimeInterval: 0.1)
+
+            // 2. Kirim tiap label berurutan dengan jeda fisik motor
+            for (idx, labelData) in labels.enumerated() {
+                DispatchQueue.main.async {
+                    onProgress?(idx + 1, total)
+                }
+
+                var offset = 0
+                while offset < labelData.count {
+                    let thisChunkSize = min(chunkSize, labelData.count - offset)
+                    let chunk = labelData.subdata(in: offset..<(offset + thisChunkSize))
+                    peripheral.writeValue(chunk, for: char, type: writeType)
+                    offset += thisChunkSize
+                    Thread.sleep(forTimeInterval: 0.03)
+                }
+
+                // Jeda fisik motor printer membakar dan melangkah maju per label
+                Thread.sleep(forTimeInterval: interLabelDelay)
+            }
+
+            // 3. Kirim stiker kosong penutup (tear off blank 284 dots) untuk mendorong ke pisau sobek
+            if let tearOff = tearOffRaster {
+                var offset = 0
+                while offset < tearOff.count {
+                    let thisChunkSize = min(chunkSize, tearOff.count - offset)
+                    let chunk = tearOff.subdata(in: offset..<(offset + thisChunkSize))
+                    peripheral.writeValue(chunk, for: char, type: writeType)
+                    offset += thisChunkSize
+                    Thread.sleep(forTimeInterval: 0.03)
+                }
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+
+            DispatchQueue.main.async {
+                self.statusMessage = "Berhasil mencetak \(total) stiker barcode!"
+                completion?(true, nil)
+            }
+        }
+    }
 }
