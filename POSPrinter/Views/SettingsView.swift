@@ -97,6 +97,21 @@ struct SettingsView: View {
                     }
                 }
 
+                // Section 4: DYMO 4XL Printer Bridge (Laptop Wi-Fi)
+                Section(header: Text("Printer Label DYMO 4XL (Laptop Wi-Fi)")) {
+                    HStack {
+                        Text("Host / IP Laptop:")
+                            .foregroundColor(.secondary)
+                        TextField("desktop-kurc90q.local:8088", text: $dataManager.storeConfig.dymoBridgeHost)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+
+                    Text("Gunakan 'desktop-kurc90q.local:8088' atau IP laptop. Terhubung otomatis selama HP dan laptop berada di Wi-Fi yang sama.")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+
                 // Section 4: Mesin Kasir & Kertas POS
                 Section(header: Text("Konfigurasi Printer POS Thermal")) {
                     Picker("Lebar Kertas", selection: $dataManager.storeConfig.paperWidth) {

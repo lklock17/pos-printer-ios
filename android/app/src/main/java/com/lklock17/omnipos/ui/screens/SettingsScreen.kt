@@ -42,6 +42,7 @@ fun SettingsScreen() {
     var storePhone by remember { mutableStateOf(config.storePhone) }
     var footerMessage by remember { mutableStateOf(config.footerMessage) }
     var isAutoCutEnabled by remember { mutableStateOf(config.isAutoCutEnabled) }
+    var dymoBridgeHost by remember { mutableStateOf(config.dymoBridgeHost) }
 
     LaunchedEffect(Unit) {
         BluetoothPrinterManager.refreshPairedDevices(context)
@@ -197,6 +198,17 @@ fun SettingsScreen() {
                 Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(value = footerMessage, onValueChange = { footerMessage = it }, label = { Text("Pesan Kaki Struk") }, modifier = Modifier.fillMaxWidth())
 
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("PRINTER LABEL DYMO 4XL (LAPTOP WI-FI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = dymoBridgeHost,
+                    onValueChange = { dymoBridgeHost = it },
+                    label = { Text("Host / IP Laptop Bridge") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Gunakan 'desktop-kurc90q.local:8088' atau IP laptop. Terhubung otomatis selama HP dan laptop berada di Wi-Fi yang sama.", fontSize = 10.sp, color = Color.Gray)
+
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -221,7 +233,8 @@ fun SettingsScreen() {
                             defaultSenderName = storeName,
                             defaultSenderPhone = storePhone,
                             defaultSenderAddress = storeAddress,
-                            isAutoCutEnabled = isAutoCutEnabled
+                            isAutoCutEnabled = isAutoCutEnabled,
+                            dymoBridgeHost = dymoBridgeHost
                         )
                         DataManager.storeConfig.value = updated
                         DataManager.saveAll(context)

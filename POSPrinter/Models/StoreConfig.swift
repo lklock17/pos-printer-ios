@@ -21,6 +21,7 @@ public struct StoreConfig: Codable, Equatable {
     public var feedLinesBeforeCut: Int
     public var labelWidthInch: Double  // 4.0
     public var labelHeightInch: Double // 6.0
+    public var dymoBridgeHost: String  // e.g. "desktop-kurc90q.local:8088"
 
     public init(storeName: String = "OmniPOS Store",
                 storeTagline: String = "Kasir & Pengiriman Terpadu",
@@ -36,7 +37,8 @@ public struct StoreConfig: Codable, Equatable {
                 isAutoCutEnabled: Bool = true,
                 feedLinesBeforeCut: Int = 5,
                 labelWidthInch: Double = 4.0,
-                labelHeightInch: Double = 6.0) {
+                labelHeightInch: Double = 6.0,
+                dymoBridgeHost: String = "desktop-kurc90q.local:8088") {
         self.storeName = storeName
         self.storeTagline = storeTagline
         self.storeAddress = storeAddress
@@ -52,6 +54,7 @@ public struct StoreConfig: Codable, Equatable {
         self.feedLinesBeforeCut = feedLinesBeforeCut
         self.labelWidthInch = labelWidthInch
         self.labelHeightInch = labelHeightInch
+        self.dymoBridgeHost = dymoBridgeHost
     }
 }
 

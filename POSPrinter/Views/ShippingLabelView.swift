@@ -12,7 +12,14 @@ struct ShippingLabelView: View {
 
     @State private var selectedOrder: Order? = nil
     @State private var isCustomMode: Bool = false
-    @State private var selectedPrintFormat: TargetPrintType = .tspl58x40
+    enum TargetPrinterDestination: String, CaseIterable, Identifiable {
+        case dymoLaptop = "DYMO 4XL (Laptop Wi-Fi)"
+        case kassenBluetooth = "Kassen MT200A (Bluetooth)"
+        var id: String { rawValue }
+    }
+
+    @State private var selectedDestination: TargetPrinterDestination = .dymoLaptop
+    @State private var selectedPrintFormat: TargetPrintType = .tspl4x6
     
     // Form Edit State
     @State private var courier: String = "J&T Express"
@@ -147,10 +154,13 @@ struct ShippingLabelView: View {
     }
 
     private var confirmationMessageText: String {
-        let fmtName = selectedPrintFormat.rawValue
         let rec = activeShippingInfo.recipientName
         let awb = activeShippingInfo.trackingNumber
         let cr = activeShippingInfo.courier
+        if selectedDestination == .dymoLaptop {
+            return "Kirim label resi 4x6 ke printer DYMO LabelWriter 4XL di laptop?\n\n• Kurir: \(cr)\n• Penerima: \(rec)\n• No Resi: \(awb)\n• Resolusi: 300 DPI (Wi-Fi)"
+        }
+        let fmtName = selectedPrintFormat.rawValue
         return "Apakah Anda yakin ingin mencetak:\n\n• Format: \(fmtName)\n• Kurir: \(cr)\n• Penerima: \(rec)\n• No Resi: \(awb)\n\nData akan langsung dikirim ke printer thermal."
     }
 
@@ -244,12 +254,60 @@ struct ShippingLabelView: View {
         }
     }
 
-    // MARK: - Format Selector (58x40mm Stiker vs 4x6 vs POS Slip)
+    // MARK: - Printer Destination & Format Selector
     private var formatSelectorSection: some View {
-        HStack(spacing: 8) {
-            formatChip(title: "Stiker 58x40 mm", subtitle: "Stiker Tempel", icon: "tag.fill", format: .tspl58x40)
-            formatChip(title: "Label 4x6 Inci", subtitle: "Resi Ekspedisi", icon: "shippingbox.fill", format: .tspl4x6)
-            formatChip(title: "Struk 58mm", subtitle: "Kertas Roll POS", icon: "printer.fill", format: .receiptSlip)
+        VStack(spacing: 10) {
+            // Target Printer Selector (DYMO Laptop vs Kassen Bluetooth)
+            HStack(spacing: 8) {
+                destinationChip(title: "DYMO 4XL (Laptop)", subtitle: "Wi-Fi (300 DPI)", icon: "shippingbox.circle.fill", dest: .dymoLaptop)
+                destinationChip(title: "Kassen MT200A", subtitle: "Bluetooth Portabel", icon: "printer.fill", dest: .kassenBluetooth)
+            }
+
+            if selectedDestination == .kassenBluetooth {
+                HStack(spacing: 8) {
+                    formatChip(title: "Stiker 58x40 mm", subtitle: "Stiker Tempel", icon: "tag.fill", format: .tspl58x40)
+                    formatChip(title: "Label 4x6 Inci", subtitle: "Resi Ekspedisi", icon: "shippingbox.fill", format: .tspl4x6)
+                    formatChip(title: "Struk 58mm", subtitle: "Kertas Roll POS", icon: "printer.fill", format: .receiptSlip)
+                }
+            }
+        }
+    }
+
+    private func destinationChip(title: String, subtitle: String, icon: String, dest: TargetPrinterDestination) -> some View {
+        let isSelected = selectedDestination == dest
+        return Button(action: {
+            selectedDestination = dest
+            if dest == .dymoLaptop {
+                selectedPrintFormat = .tspl4x6
+            }
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 15))
+                    .foregroundColor(isSelected ? .cyan : .gray)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .bold))
+                    Text(subtitle)
+                        .font(.system(size: 9))
+                        .foregroundColor(isSelected ? .white.opacity(0.85) : .white.opacity(0.45))
+                }
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? .cyan : .gray.opacity(0.5))
+                    .font(.system(size: 14))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.blue.opacity(0.4) : Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.cyan : Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .foregroundColor(.white)
         }
     }
 
@@ -784,43 +842,75 @@ struct ShippingLabelView: View {
     // MARK: - Action Buttons
     private var actionButtonsSection: some View {
         VStack(spacing: 12) {
-            // Main Print Button dynamically matching selected format
-            let printButtonTitle = "Cetak \(selectedPrintFormat.rawValue)"
-            let printIcon = selectedPrintFormat == .tspl58x40 ? "tag.fill" : (selectedPrintFormat == .tspl4x6 ? "shippingbox.fill" : "printer.fill")
-            let tint = selectedPrintFormat == .tspl58x40 ? Color(red: 0.1, green: 0.7, blue: 0.3) : Color(red: 0.12, green: 0.55, blue: 0.98)
+            if selectedDestination == .dymoLaptop {
+                LiquidGlassButton(
+                    title: "Cetak Resi ke DYMO 4XL (Laptop)",
+                    icon: "shippingbox.fill",
+                    tintColor: Color(red: 0.05, green: 0.65, blue: 0.95),
+                    isEnabled: true
+                ) {
+                    showPrintConfirmDialog = true
+                }
 
-            LiquidGlassButton(
-                title: printButtonTitle,
-                icon: printIcon,
-                tintColor: btManager.isConnected ? tint : Color.gray,
-                isEnabled: true
-            ) {
-                showPrintConfirmDialog = true
-            }
-
-            // Status Bluetooth Banner
-            if !btManager.isConnected {
+                // Banner Info Bridge Laptop
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundColor(.yellow)
-                    Text("Printer Bluetooth belum terhubung.")
+                    Image(systemName: "network")
+                        .foregroundColor(.cyan)
+                    Text("Target: DYMO 4XL (\(dataManager.storeConfig.dymoBridgeHost))")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.85))
                     Spacer()
-                    Button("Hubungkan") {
-                        showPrinterScanSheet = true
-                    }
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.cyan)
+                    Text("Wi-Fi 300 DPI")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.green)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color.yellow.opacity(0.12))
+                .background(Color.cyan.opacity(0.12))
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
                 )
+            } else {
+                // Main Print Button dynamically matching selected format for Bluetooth
+                let printButtonTitle = "Cetak \(selectedPrintFormat.rawValue)"
+                let printIcon = selectedPrintFormat == .tspl58x40 ? "tag.fill" : (selectedPrintFormat == .tspl4x6 ? "shippingbox.fill" : "printer.fill")
+                let tint = selectedPrintFormat == .tspl58x40 ? Color(red: 0.1, green: 0.7, blue: 0.3) : Color(red: 0.12, green: 0.55, blue: 0.98)
+
+                LiquidGlassButton(
+                    title: printButtonTitle,
+                    icon: printIcon,
+                    tintColor: btManager.isConnected ? tint : Color.gray,
+                    isEnabled: true
+                ) {
+                    showPrintConfirmDialog = true
+                }
+
+                // Status Bluetooth Banner
+                if !btManager.isConnected {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundColor(.yellow)
+                        Text("Printer Bluetooth belum terhubung.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.85))
+                        Spacer()
+                        Button("Hubungkan") {
+                            showPrinterScanSheet = true
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.cyan)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.yellow.opacity(0.12))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
+                    )
+                }
             }
         }
     }
@@ -1013,6 +1103,11 @@ struct ShippingLabelView: View {
 
     // MARK: - Print Execution (Dispatched after Confirmation)
     private func executePrintSelectedFormat() {
+        if selectedDestination == .dymoLaptop {
+            executePrintDYMOLaptop()
+            return
+        }
+
         guard btManager.isConnected else {
             printResultMessage = "Printer Bluetooth belum terhubung. Silakan buka menu Pengaturan atau tap 'Hubungkan' terlebih dahulu."
             showPrintResultAlert = true
@@ -1040,6 +1135,80 @@ struct ShippingLabelView: View {
             }
             showPrintResultAlert = true
         }
+    }
+
+    private func executePrintDYMOLaptop() {
+        let ship = activeShippingInfo
+        let payload: [String: Any] = [
+            "courier": ship.courier,
+            "service": ship.service,
+            "tracking_number": ship.trackingNumber,
+            "sender_name": ship.senderName,
+            "sender_phone": ship.senderPhone,
+            "sender_address": ship.senderAddress,
+            "recipient_name": ship.recipientName,
+            "recipient_phone": ship.recipientPhone,
+            "recipient_address": ship.recipientAddress,
+            "postal_code": ship.postalCode,
+            "weight_kg": ship.weightKg,
+            "is_cod": ship.isCOD,
+            "cod_amount": ship.codAmount,
+            "package_contents": "Pesanan OmniPOS"
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            printResultMessage = "Gagal memproses data resi."
+            showPrintResultAlert = true
+            return
+        }
+
+        let host = dataManager.storeConfig.dymoBridgeHost.trimmingCharacters(in: .whitespaces)
+        let primaryUrlStr = host.hasPrefix("http") ? host : "http://\(host)/api/print-label"
+        guard let url = URL(string: primaryUrlStr) else {
+            printResultMessage = "Format alamat laptop tidak valid: \(host)"
+            showPrintResultAlert = true
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        request.timeoutInterval = 5.0
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                    printResultMessage = "✅ Berhasil! Label 4x6 telah dikirim dan tercetak di DYMO LabelWriter 4XL laptop."
+                    showPrintResultAlert = true
+                } else {
+                    fallbackPrintToIP(jsonData: jsonData)
+                }
+            }
+        }.resume()
+    }
+
+    private func fallbackPrintToIP(jsonData: Data) {
+        guard let url = URL(string: "http://192.168.18.169:8088/api/print-label") else {
+            printResultMessage = "Gagal menghubungi laptop di Wi-Fi. Pastikan laptop menyala dan terhubung ke Wi-Fi yang sama."
+            showPrintResultAlert = true
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        request.timeoutInterval = 5.0
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                    printResultMessage = "✅ Berhasil! Label 4x6 telah dikirim dan tercetak di DYMO LabelWriter 4XL laptop."
+                } else {
+                    printResultMessage = "❌ Gagal menghubungi DYMO di laptop. Pastikan HP dan Laptop terhubung ke Wi-Fi yang sama (Port 8088)."
+                }
+                showPrintResultAlert = true
+            }
+        }.resume()
     }
 
     private func createWorkingOrder() -> Order {

@@ -12,6 +12,7 @@ data class StoreConfig(
     var feedLinesBeforeCut: Int = 4,
     var isCashDrawerEnabled: Boolean = false,
     var isTaxEnabled: Boolean = false,
-    var taxRatePercent: Double = 11.0
+    var taxRatePercent: Double = 11.0,
+    var dymoBridgeHost: String = "desktop-kurc90q.local:8088"
 )
 

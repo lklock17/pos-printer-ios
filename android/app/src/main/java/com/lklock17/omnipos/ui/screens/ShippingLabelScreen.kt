@@ -29,6 +29,11 @@ import com.lklock17.omnipos.services.PrinterEngine
 import com.lklock17.omnipos.ui.components.LiquidGlassButton
 import com.lklock17.omnipos.ui.components.LiquidGlassCard
 
+enum class TargetPrinterDest(val title: String, val subtitle: String) {
+    DYMO_LAPTOP("DYMO 4XL (Laptop)", "Wi-Fi (300 DPI)"),
+    KASSEN_BT("Kassen MT200A", "Bluetooth Portabel")
+}
+
 enum class LabelPrintFormat(val title: String, val subtitle: String) {
     STICKER_58X40("Stiker 58x40 mm", "Stiker Tempel"),
     LABEL_4X6("Label 4x6 Inci", "Resi Ekspedisi"),
@@ -39,7 +44,8 @@ enum class LabelPrintFormat(val title: String, val subtitle: String) {
 @Composable
 fun ShippingLabelScreen() {
     val context = LocalContext.current
-    var selectedFormat by remember { mutableStateOf(LabelPrintFormat.STICKER_58X40) }
+    var printerDest by remember { mutableStateOf(TargetPrinterDest.DYMO_LAPTOP) }
+    var selectedFormat by remember { mutableStateOf(LabelPrintFormat.LABEL_4X6) }
     var showAddressBook by remember { mutableStateOf(false) }
     var showPrintConfirmDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -113,19 +119,24 @@ fun ShippingLabelScreen() {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // 1. Format Selector (58x40 vs 4x6 vs 58mm)
+            // 1. Target Printer Selector (DYMO Laptop vs Kassen Bluetooth)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                LabelPrintFormat.values().forEach { fmt ->
-                    val isSelected = selectedFormat == fmt
+                TargetPrinterDest.values().forEach { dest ->
+                    val isSelected = printerDest == dest
                     Surface(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable { selectedFormat = fmt },
-                        color = if (isSelected) Color(0xFF2563EB) else Color(0x1AFFFFFF),
+                            .clickable {
+                                printerDest = dest
+                                if (dest == TargetPrinterDest.DYMO_LAPTOP) {
+                                    selectedFormat = LabelPrintFormat.LABEL_4X6
+                                }
+                            },
+                        color = if (isSelected) Color(0xFF0284C7) else Color(0x1AFFFFFF),
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
                             if (isSelected) Color(0xFF38BDF8) else Color(0x22FFFFFF)
@@ -133,22 +144,65 @@ fun ShippingLabelScreen() {
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = fmt.title,
+                                text = dest.title,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = fmt.subtitle,
+                                text = dest.subtitle,
                                 fontSize = 9.sp,
                                 color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color.Gray,
                                 textAlign = TextAlign.Center
                             )
+                        }
+                    }
+                }
+            }
+
+            // 1b. Format Selector (Only when Kassen BT is chosen)
+            if (printerDest == TargetPrinterDest.KASSEN_BT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LabelPrintFormat.values().forEach { fmt ->
+                        val isSelected = selectedFormat == fmt
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { selectedFormat = fmt },
+                            color = if (isSelected) Color(0xFF2563EB) else Color(0x1AFFFFFF),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSelected) Color(0xFF38BDF8) else Color(0x22FFFFFF)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = fmt.title,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = fmt.subtitle,
+                                    fontSize = 9.sp,
+                                    color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color.Gray,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -243,43 +297,74 @@ fun ShippingLabelScreen() {
             }
 
             // 4. Action Buttons (Print with Confirmation)
-            val printTitle = when (selectedFormat) {
-                LabelPrintFormat.STICKER_58X40 -> "Cetak Stiker 58x40 mm (TSPL)"
-                LabelPrintFormat.LABEL_4X6 -> "Cetak Label 4x6 Thermal (TSPL)"
-                LabelPrintFormat.SLIP_58 -> "Cetak Resi ke Struk POS (Auto-Cut)"
-            }
+            if (printerDest == TargetPrinterDest.DYMO_LAPTOP) {
+                LiquidGlassButton(
+                    text = "Cetak Resi ke DYMO 4XL (Laptop)",
+                    icon = Icons.Default.Print,
+                    gradientColors = listOf(Color(0xFF0284C7), Color(0xFF0369A1)),
+                    enabled = true
+                ) {
+                    showPrintConfirmDialog = true
+                }
 
-            LiquidGlassButton(
-                text = printTitle,
-                icon = if (selectedFormat == LabelPrintFormat.STICKER_58X40) Icons.Default.LocalOffer else Icons.Default.Print,
-                gradientColors = if (selectedFormat == LabelPrintFormat.STICKER_58X40)
-                    listOf(Color(0xFF059669), Color(0xFF10B981))
-                else
-                    listOf(Color(0xFF2563EB), Color(0xFF7C3AED)),
-                enabled = true
-            ) {
-                showPrintConfirmDialog = true
-            }
-
-            // Bluetooth Status Banner
-            if (!BluetoothPrinterManager.isConnected.value) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0x22F59E0B),
+                    color = Color(0x220284C7),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66F59E0B))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x660284C7))
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CloudQueue, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Printer Bluetooth belum terhubung. Buka tab Pengaturan untuk menyambungkan printer.",
+                            "Target: DYMO 4XL (${DataManager.storeConfig.value.dymoBridgeHost}) - Wi-Fi 300 DPI",
                             fontSize = 12.sp,
-                            color = Color(0xFFFDE68A)
+                            color = Color(0xFFE0F2FE)
                         )
+                    }
+                }
+            } else {
+                val printTitle = when (selectedFormat) {
+                    LabelPrintFormat.STICKER_58X40 -> "Cetak Stiker 58x40 mm (TSPL)"
+                    LabelPrintFormat.LABEL_4X6 -> "Cetak Label 4x6 Thermal (TSPL)"
+                    LabelPrintFormat.SLIP_58 -> "Cetak Resi ke Struk POS (Auto-Cut)"
+                }
+
+                LiquidGlassButton(
+                    text = printTitle,
+                    icon = if (selectedFormat == LabelPrintFormat.STICKER_58X40) Icons.Default.LocalOffer else Icons.Default.Print,
+                    gradientColors = if (selectedFormat == LabelPrintFormat.STICKER_58X40)
+                        listOf(Color(0xFF059669), Color(0xFF10B981))
+                    else
+                        listOf(Color(0xFF2563EB), Color(0xFF7C3AED)),
+                    enabled = true
+                ) {
+                    showPrintConfirmDialog = true
+                }
+
+                // Bluetooth Status Banner
+                if (!BluetoothPrinterManager.isConnected.value) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0x22F59E0B),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66F59E0B))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Printer Bluetooth belum terhubung. Buka tab Pengaturan untuk menyambungkan printer.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFFDE68A)
+                            )
+                        }
                     }
                 }
             }
@@ -290,40 +375,117 @@ fun ShippingLabelScreen() {
 
     // Anti-Accidental Print Confirmation Dialog
     if (showPrintConfirmDialog) {
+        val confirmMsg = if (printerDest == TargetPrinterDest.DYMO_LAPTOP) {
+            "Kirim label resi 4x6 ke printer DYMO LabelWriter 4XL di laptop?\n\n" +
+            "• Kurir: ${activeShipping.courier} (${activeShipping.service})\n" +
+            "• Penerima: ${activeShipping.recipientName}\n" +
+            "• No Resi: ${activeShipping.trackingNumber}\n" +
+            "• Resolusi: 300 DPI (Wi-Fi)"
+        } else {
+            "Apakah Anda yakin ingin mencetak:\n\n" +
+            "• Format: ${selectedFormat.title}\n" +
+            "• Kurir: ${activeShipping.courier} (${activeShipping.service})\n" +
+            "• Penerima: ${activeShipping.recipientName}\n" +
+            "• No Resi: ${activeShipping.trackingNumber}\n\n" +
+            "Data akan langsung dikirim ke printer thermal."
+        }
+
         AlertDialog(
             onDismissRequest = { showPrintConfirmDialog = false },
             title = { Text("Konfirmasi Cetak", fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "Apakah Anda yakin ingin mencetak:\n\n" +
-                    "• Format: ${selectedFormat.title}\n" +
-                    "• Kurir: ${activeShipping.courier} (${activeShipping.service})\n" +
-                    "• Penerima: ${activeShipping.recipientName}\n" +
-                    "• No Resi: ${activeShipping.trackingNumber}\n\n" +
-                    "Data akan langsung dikirim ke printer thermal."
-                )
-            },
+            text = { Text(confirmMsg) },
             confirmButton = {
                 Button(
                     onClick = {
                         showPrintConfirmDialog = false
-                        val data = when (selectedFormat) {
-                            LabelPrintFormat.STICKER_58X40 -> PrinterEngine.buildTSPLSticker58x40Data(workingOrder, DataManager.storeConfig.value)
-                            LabelPrintFormat.LABEL_4X6 -> PrinterEngine.buildTSPLLabelData(workingOrder, DataManager.storeConfig.value)
-                            LabelPrintFormat.SLIP_58 -> PrinterEngine.buildShippingSlip58Data(workingOrder, DataManager.storeConfig.value)
-                        }
+                        if (printerDest == TargetPrinterDest.DYMO_LAPTOP) {
+                            // Send via Wi-Fi Bridge to laptop
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                try {
+                                    val jsonPayload = org.json.JSONObject().apply {
+                                        put("courier", activeShipping.courier)
+                                        put("service", activeShipping.service)
+                                        put("tracking_number", activeShipping.trackingNumber)
+                                        put("sender_name", activeShipping.senderName)
+                                        put("sender_phone", activeShipping.senderPhone)
+                                        put("sender_address", activeShipping.senderAddress)
+                                        put("recipient_name", activeShipping.recipientName)
+                                        put("recipient_phone", activeShipping.recipientPhone)
+                                        put("recipient_address", activeShipping.recipientAddress)
+                                        put("postal_code", activeShipping.postalCode)
+                                        put("weight_kg", activeShipping.weightKg)
+                                        put("is_cod", activeShipping.isCOD)
+                                        put("cod_amount", activeShipping.codAmount)
+                                        put("package_contents", "Pesanan OmniPOS")
+                                    }.toString()
 
-                        BluetoothPrinterManager.sendData(data) { success, errorMsg ->
-                            if (success) {
-                                Toast.makeText(context, "${selectedFormat.title} berhasil dicetak!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, errorMsg ?: "Gagal mencetak.", Toast.LENGTH_LONG).show()
+                                    val host = DataManager.storeConfig.value.dymoBridgeHost.trim()
+                                    val primaryUrl = if (host.startsWith("http")) host else "http://$host/api/print-label"
+                                    
+                                    var success = false
+                                    try {
+                                        val conn = (java.net.URL(primaryUrl).openConnection() as java.net.HttpURLConnection).apply {
+                                            requestMethod = "POST"
+                                            setRequestProperty("Content-Type", "application/json")
+                                            connectTimeout = 4000
+                                            readTimeout = 4000
+                                            doOutput = true
+                                            outputStream.use { it.write(jsonPayload.toByteArray(Charsets.UTF_8)) }
+                                        }
+                                        success = conn.responseCode == 200
+                                    } catch (e: Exception) {
+                                        // Fallback to IP
+                                        try {
+                                            val fallbackConn = (java.net.URL("http://192.168.18.169:8088/api/print-label").openConnection() as java.net.HttpURLConnection).apply {
+                                                requestMethod = "POST"
+                                                setRequestProperty("Content-Type", "application/json")
+                                                connectTimeout = 4000
+                                                readTimeout = 4000
+                                                doOutput = true
+                                                outputStream.use { it.write(jsonPayload.toByteArray(Charsets.UTF_8)) }
+                                            }
+                                            success = fallbackConn.responseCode == 200
+                                        } catch (ex: Exception) {
+                                            success = false
+                                        }
+                                    }
+
+                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        if (success) {
+                                            Toast.makeText(context, "✅ Berhasil! Label 4x6 telah dikirim dan tercetak di DYMO 4XL laptop.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "❌ Gagal menghubungi DYMO di laptop. Pastikan HP dan Laptop di Wi-Fi yang sama.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        } else {
+                            val data = when (selectedFormat) {
+                                LabelPrintFormat.STICKER_58X40 -> PrinterEngine.buildTSPLSticker58x40Data(workingOrder, DataManager.storeConfig.value)
+                                LabelPrintFormat.LABEL_4X6 -> PrinterEngine.buildTSPLLabelData(workingOrder, DataManager.storeConfig.value)
+                                LabelPrintFormat.SLIP_58 -> PrinterEngine.buildShippingSlip58Data(workingOrder, DataManager.storeConfig.value)
+                            }
+
+                            BluetoothPrinterManager.sendData(data) { success, errorMsg ->
+                                if (success) {
+                                    Toast.makeText(context, "${selectedFormat.title} berhasil dicetak!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, errorMsg ?: "Gagal mencetak.", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
                 ) {
                     Text("Ya, Cetak Sekarang", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
                 }
             },
             dismissButton = {
