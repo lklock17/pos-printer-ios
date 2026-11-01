@@ -8,6 +8,8 @@ struct SettingsView: View {
     @State private var showPrinterScanSheet = false
     @State private var testPrintAlertMessage = ""
     @State private var showTestPrintAlert = false
+    @State private var showConfirmTestReceipt = false
+    @State private var showConfirmTestLabel = false
 
     var body: some View {
         NavigationView {
@@ -154,7 +156,7 @@ struct SettingsView: View {
 
                 // Section 7: Uji Coba Cetak (Test Print)
                 Section(header: Text("Uji Coba Cetak (Test Print)")) {
-                    Button(action: testPrintReceipt) {
+                    Button(action: { showConfirmTestReceipt = true }) {
                         HStack {
                             Image(systemName: "printer.fill")
                             Text("Test Print Struk Kasir (Auto-Cut)")
@@ -167,7 +169,7 @@ struct SettingsView: View {
                     }
                     .disabled(!bluetooth.isConnected)
 
-                    Button(action: testPrintShippingLabel) {
+                    Button(action: { showConfirmTestLabel = true }) {
                         HStack {
                             Image(systemName: "shippingbox.fill")
                             Text("Test Print Label 4x6 (TSPL)")
@@ -230,6 +232,22 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(testPrintAlertMessage)
+            }
+            .alert("Konfirmasi Test Print Struk", isPresented: $showConfirmTestReceipt) {
+                Button("Batal", role: .cancel) { }
+                Button("Ya, Cetak") {
+                    testPrintReceipt()
+                }
+            } message: {
+                Text("Apakah Anda yakin ingin mengirim struk kasir uji coba ke printer thermal (Auto-Cut)?")
+            }
+            .alert("Konfirmasi Test Print Label 4x6", isPresented: $showConfirmTestLabel) {
+                Button("Batal", role: .cancel) { }
+                Button("Ya, Cetak") {
+                    testPrintShippingLabel()
+                }
+            } message: {
+                Text("Apakah Anda yakin ingin mengirim label pengiriman 4x6 uji coba ke printer label (TSPL)?")
             }
         }
     }

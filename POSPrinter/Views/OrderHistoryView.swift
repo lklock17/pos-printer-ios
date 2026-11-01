@@ -21,51 +21,54 @@ struct OrderHistoryView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Top Summary Card (Omzet & Laba Hari Ini)
-                todaySummaryCard
+            ZStack {
+                LiquidGlassBackground()
 
-                // Filter Segment
-                Picker("Filter", selection: $selectedFilter) {
-                    Text("Semua (\(dataManager.orders.count))").tag(0)
-                    Text("Kasir (\(dataManager.orders.filter { $0.orderType == .offline }.count))").tag(1)
-                    Text("Pengiriman (\(dataManager.orders.filter { $0.orderType == .shipping }.count))").tag(2)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                VStack(spacing: 0) {
+                    // Top Summary Card (Omzet & Laba Hari Ini)
+                    todaySummaryCard
 
-                // List Transaksi
-                if filteredOrders.isEmpty {
-                    Spacer()
-                    VStack(spacing: 12) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-                        Text("Belum ada riwayat transaksi")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("Transaksi dari kasir atau pengiriman paket akan tercatat di sini.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                    // Filter Segment
+                    Picker("Filter", selection: $selectedFilter) {
+                        Text("Semua (\(dataManager.orders.count))").tag(0)
+                        Text("Kasir (\(dataManager.orders.filter { $0.orderType == .offline }.count))").tag(1)
+                        Text("Pengiriman (\(dataManager.orders.filter { $0.orderType == .shipping }.count))").tag(2)
                     }
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(filteredOrders) { order in
-                            OrderRowItem(order: order)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedOrderForDetail = order
-                                }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+
+                    // List Transaksi
+                    if filteredOrders.isEmpty {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 48))
+                                .foregroundColor(.white.opacity(0.4))
+                            Text("Belum ada riwayat transaksi")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("Transaksi dari kasir atau pengiriman paket akan tercatat di sini.")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.6))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
                         }
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(filteredOrders) { order in
+                                OrderRowItem(order: order)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        selectedOrderForDetail = order
+                                    }
+                            }
+                        }
+                        .listStyle(PlainListStyle())
                     }
-                    .listStyle(PlainListStyle())
                 }
             }
-            .background(Color(UIColor.systemGroupedBackground))
             .navigationTitle("Riwayat & Laporan")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $selectedOrderForDetail) { order in
@@ -122,8 +125,7 @@ struct OrderHistoryView: View {
             }
         }
         .padding(14)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
+        .liquidGlassCard(cornerRadius: 14)
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
@@ -223,6 +225,9 @@ struct OrderDetailSheet: View {
     var onReprintReceipt: () -> Void
     var onReprintLabel: () -> Void
     @Environment(\.presentationMode) private var presentationMode
+
+    @State private var showConfirmReceipt: Bool = false
+    @State private var showConfirmLabel: Bool = false
 
     var body: some View {
         NavigationView {
@@ -367,7 +372,7 @@ struct OrderDetailSheet: View {
                 }
 
                 Section {
-                    Button(action: onReprintReceipt) {
+                    Button(action: { showConfirmReceipt = true }) {
                         HStack {
                             Image(systemName: "printer.fill")
                             Text("Cetak Ulang Struk Thermal (Auto-Cut)")
@@ -377,7 +382,7 @@ struct OrderDetailSheet: View {
                     }
 
                     if order.orderType == .shipping {
-                        Button(action: onReprintLabel) {
+                        Button(action: { showConfirmLabel = true }) {
                             HStack {
                                 Image(systemName: "shippingbox.fill")
                                 Text("Cetak Ulang Label 4x6 (TSPL)")
@@ -397,6 +402,22 @@ struct OrderDetailSheet: View {
                         presentationMode.wrappedValue.dismiss()
                     }
                 }
+            }
+            .alert("Konfirmasi Cetak Ulang Struk", isPresented: $showConfirmReceipt) {
+                Button("Batal", role: .cancel) { }
+                Button("Ya, Cetak") {
+                    onReprintReceipt()
+                }
+            } message: {
+                Text("Apakah Anda yakin ingin mencetak ulang struk faktur \(order.invoiceNumber)?")
+            }
+            .alert("Konfirmasi Cetak Ulang Label 4x6", isPresented: $showConfirmLabel) {
+                Button("Batal", role: .cancel) { }
+                Button("Ya, Cetak") {
+                    onReprintLabel()
+                }
+            } message: {
+                Text("Apakah Anda yakin ingin mencetak ulang label pengiriman 4x6 untuk resi \(order.shippingInfo?.trackingNumber ?? order.invoiceNumber)?")
             }
         }
     }

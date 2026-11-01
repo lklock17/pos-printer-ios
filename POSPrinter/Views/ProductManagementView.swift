@@ -33,109 +33,126 @@ struct ProductManagementView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Header Bar Pencarian
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    TextField("Cari produk, SKU, barcode...", text: $searchQuery)
-                    if !searchQuery.isEmpty {
-                        Button(action: { searchQuery = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+            ZStack {
+                LiquidGlassBackground()
 
-                // Stock Filter Tabs
-                Picker("Filter Stok", selection: $stockFilter) {
-                    Text("Semua (\(dataManager.products.count))").tag(0)
-                    Text("Menipis (\(dataManager.products.filter { $0.isLowStock && !$0.isOutOfStock }.count))").tag(1)
-                    Text("Habis (\(dataManager.products.filter { $0.isOutOfStock }.count))").tag(2)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-
-                // Kategori Chips Horizontal
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(dataManager.categories, id: \.self) { cat in
-                            Button(action: { selectedCategory = cat }) {
-                                Text(cat)
-                                    .font(.system(size: 13, weight: selectedCategory == cat ? .bold : .regular))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                                    .background(selectedCategory == cat ? Color.blue : Color(UIColor.secondarySystemBackground))
-                                    .foregroundColor(selectedCategory == cat ? .white : .primary)
-                                    .clipShape(Capsule())
+                VStack(spacing: 0) {
+                    // Header Bar Pencarian
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.cyan)
+                        TextField("Cari produk, SKU, barcode...", text: $searchQuery)
+                            .foregroundColor(.white)
+                        if !searchQuery.isEmpty {
+                            Button(action: { searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
                             }
                         }
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                    )
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                }
+                    .padding(.top, 8)
 
-                // List Produk
-                if filteredProducts.isEmpty {
-                    Spacer()
-                    VStack(spacing: 12) {
-                        Image(systemName: "cube.box")
-                            .font(.system(size: 50))
-                            .foregroundColor(.secondary)
-                        Text("Tidak ada produk ditemukan")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("Coba cari kata kunci lain atau tambahkan produk baru.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                    // Stock Filter Tabs
+                    Picker("Filter Stok", selection: $stockFilter) {
+                        Text("Semua (\(dataManager.products.count))").tag(0)
+                        Text("Menipis (\(dataManager.products.filter { $0.isLowStock && !$0.isOutOfStock }.count))").tag(1)
+                        Text("Habis (\(dataManager.products.filter { $0.isOutOfStock }.count))").tag(2)
                     }
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(filteredProducts) { product in
-                            ProductRowItem(product: product, onEdit: {
-                                selectedProductToEdit = product
-                            }, onStockAdjust: { delta in
-                                dataManager.adjustStock(productId: product.id, delta: delta)
-                            })
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    productToDelete = product
-                                    showDeleteConfirm = true
-                                } label: {
-                                    Label("Hapus", systemImage: "trash")
-                                }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
 
-                                Button {
-                                    selectedProductToEdit = product
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
+                    // Kategori Chips Horizontal
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(dataManager.categories, id: \.self) { cat in
+                                let isSelected = (selectedCategory == cat)
+                                Button(action: { selectedCategory = cat }) {
+                                    Text(cat)
+                                        .font(.system(size: 13, weight: isSelected ? .bold : .regular))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            isSelected
+                                                ? LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                                : LinearGradient(colors: [Color.white.opacity(0.09), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        )
+                                        .foregroundColor(.white)
+                                        .cornerRadius(20)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 20)
+                                                .stroke(isSelected ? Color.cyan.opacity(0.8) : Color.white.opacity(0.12), lineWidth: 1)
+                                        )
                                 }
-                                .tint(.orange)
                             }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                     }
-                    .listStyle(PlainListStyle())
+
+                    // List Produk
+                    if filteredProducts.isEmpty {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            Image(systemName: "cube.box")
+                                .font(.system(size: 50))
+                                .foregroundColor(.white.opacity(0.4))
+                            Text("Tidak ada produk ditemukan")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("Coba cari kata kunci lain atau tambahkan produk baru.")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.6))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(filteredProducts) { product in
+                                ProductRowItem(product: product, onEdit: {
+                                    selectedProductToEdit = product
+                                }, onStockAdjust: { delta in
+                                    dataManager.adjustStock(productId: product.id, delta: delta)
+                                })
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        productToDelete = product
+                                        showDeleteConfirm = true
+                                    } label: {
+                                        Label("Hapus", systemImage: "trash")
+                                    }
+
+                                    Button {
+                                        selectedProductToEdit = product
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    .tint(.orange)
+                                }
+                            }
+                        }
+                        .listStyle(PlainListStyle())
+                    }
                 }
             }
-            .background(Color(UIColor.systemGroupedBackground))
             .navigationTitle("Kelola Produk & Stok")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showAddProductSheet = true }) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(.blue)
+                            .font(.system(size: 22))
+                            .foregroundColor(.cyan)
                     }
                 }
             }

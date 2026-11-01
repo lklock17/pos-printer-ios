@@ -7,6 +7,15 @@ struct ContentView: View {
     @State private var autoPrintAlertMessage = ""
     @State private var showAutoPrintAlert = false
 
+    init() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        appearance.backgroundColor = UIColor(red: 0.06, green: 0.08, blue: 0.14, alpha: 0.85)
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             CashierView()
@@ -39,6 +48,8 @@ struct ContentView: View {
                 }
                 .tag(4)
         }
+        .accentColor(.cyan)
+        .preferredColorScheme(.dark)
         .onOpenURL { url in
             handleDeepLink(url: url)
         }

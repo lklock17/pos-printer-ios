@@ -19,6 +19,10 @@ struct CashierView: View {
     @State private var cashGiven: String = ""
     @State private var lastCompletedOrder: Order? = nil
     @State private var showSuccessModal: Bool = false
+    @State private var showPrintReceiptConfirm: Bool = false
+    @State private var showPrintLabelConfirm: Bool = false
+    @State private var printStatusMsg: String = ""
+    @State private var showPrintStatusAlert: Bool = false
 
     var filteredProducts: [Product] {
         dataManager.products.filter { p in
@@ -53,32 +57,35 @@ struct CashierView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Top Search Bar
-                searchBarSection
+            ZStack {
+                LiquidGlassBackground()
 
-                // Category Chips Selector
-                categoryChipsSection
+                VStack(spacing: 0) {
+                    // Top Search Bar
+                    searchBarSection
 
-                // Product Grid View
-                ScrollView {
-                    if filteredProducts.isEmpty {
-                        emptyStateView
-                    } else {
-                        LazyVGrid(columns: columns, spacing: 14) {
-                            ForEach(filteredProducts) { product in
-                                ProductCard(product: product) {
-                                    addToCart(product)
+                    // Category Chips Selector
+                    categoryChipsSection
+
+                    // Product Grid View
+                    ScrollView(showsIndicators: false) {
+                        if filteredProducts.isEmpty {
+                            emptyStateView
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 14) {
+                                ForEach(filteredProducts) { product in
+                                    ProductCard(product: product) {
+                                        addToCart(product)
+                                    }
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 90) // space for floating cart bar
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 90) // space for floating cart bar
                     }
                 }
             }
-            .background(Color(UIColor.systemGroupedBackground))
             .navigationTitle("Kasir POS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -87,7 +94,7 @@ struct CashierView: View {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: "cart.fill")
                                 .font(.system(size: 18))
-                                .foregroundColor(.blue)
+                                .foregroundColor(.cyan)
 
                             if cartTotalItems > 0 {
                                 Text("\(cartTotalItems)")
@@ -119,6 +126,11 @@ struct CashierView: View {
             .sheet(isPresented: $showSuccessModal) {
                 successModalView
             }
+            .alert("Status Cetak", isPresented: $showPrintStatusAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(printStatusMsg)
+            }
         }
     }
 
@@ -126,8 +138,9 @@ struct CashierView: View {
     private var searchBarSection: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
+                .foregroundColor(.cyan)
             TextField("Cari produk, SKU, barcode...", text: $searchQuery)
+                .foregroundColor(.white)
             if !searchQuery.isEmpty {
                 Button(action: { searchQuery = "" }) {
                     Image(systemName: "xmark.circle.fill")
@@ -135,9 +148,13 @@ struct CashierView: View {
                 }
             }
         }
-        .padding(10)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(10)
+        .padding(11)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
@@ -155,10 +172,18 @@ struct CashierView: View {
                             .font(.system(size: 13, weight: isSelected ? .bold : .medium))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(isSelected ? Color.blue : Color(UIColor.secondarySystemGroupedBackground))
-                            .foregroundColor(isSelected ? .white : .primary)
+                            .background(
+                                isSelected
+                                    ? LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    : LinearGradient(colors: [Color.white.opacity(0.09), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .foregroundColor(.white)
                             .cornerRadius(20)
-                            .shadow(color: Color.black.opacity(isSelected ? 0.15 : 0.03), radius: 3, y: 1)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(isSelected ? Color.cyan.opacity(0.8) : Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                            .shadow(color: isSelected ? Color.blue.opacity(0.35) : Color.clear, radius: 4, y: 2)
                     }
                 }
             }
@@ -529,67 +554,89 @@ struct CashierView: View {
 
     // MARK: - Success Modal
     private var successModalView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 64))
-                .foregroundColor(.green)
+        ZStack {
+            LiquidGlassBackground()
 
-            Text("Transaksi Selesai!")
-                .font(.title2.bold())
+            VStack(spacing: 22) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 68))
+                    .foregroundColor(.green)
+                    .shadow(color: .green.opacity(0.4), radius: 10, y: 5)
 
-            if let order = lastCompletedOrder {
-                Text(order.invoiceNumber)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Text(order.formattedTotal)
-                    .font(.title.bold())
-                    .foregroundColor(.blue)
+                Text("Transaksi Berhasil!")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
 
-                Divider()
-
-                VStack(spacing: 12) {
-                    Button(action: {
-                        printReceipt(order)
-                    }) {
-                        HStack {
-                            Image(systemName: "printer.fill")
-                            Text("Cetak Struk Thermal (Auto-Cut)")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                if let order = lastCompletedOrder {
+                    VStack(spacing: 6) {
+                        Text(order.invoiceNumber)
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                        Text(order.formattedTotal)
+                            .font(.system(size: 28, weight: .black))
+                            .foregroundColor(.cyan)
                     }
+                    .padding(.vertical, 8)
 
-                    if order.orderType == .shipping {
-                        Button(action: {
-                            printShippingLabel(order)
-                        }) {
-                            HStack {
-                                Image(systemName: "shippingbox.fill")
-                                Text("Cetak Label Pengiriman 4x6")
+                    Divider().background(Color.white.opacity(0.2))
+
+                    VStack(spacing: 12) {
+                        LiquidGlassButton(
+                            title: "Cetak Struk Thermal (Auto-Cut)",
+                            icon: "printer.fill",
+                            tintColor: Color(red: 0.15, green: 0.45, blue: 0.95)
+                        ) {
+                            showPrintReceiptConfirm = true
+                        }
+
+                        if order.orderType == .shipping {
+                            LiquidGlassButton(
+                                title: "Cetak Label Pengiriman 4x6",
+                                icon: "shippingbox.fill",
+                                tintColor: Color(red: 0.95, green: 0.45, blue: 0.05)
+                            ) {
+                                showPrintLabelConfirm = true
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
                         }
                     }
+                    .padding(.horizontal, 24)
                 }
-                .padding(.horizontal, 20)
-            }
 
-            Spacer()
+                Spacer()
 
-            Button("Transaksi Baru") {
-                showSuccessModal = false
+                Button(action: { showSuccessModal = false }) {
+                    Text("Transaksi Baru (Selesai)")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.12))
+                        .cornerRadius(12)
+                }
+                .padding(.bottom, 24)
             }
-            .font(.headline)
-            .padding(.bottom, 20)
+            .padding(.top, 40)
         }
-        .padding(.top, 40)
+        .alert("Konfirmasi Cetak Struk", isPresented: $showPrintReceiptConfirm) {
+            Button("Batal", role: .cancel) { }
+            Button("Ya, Cetak") {
+                if let ord = lastCompletedOrder {
+                    printReceipt(ord)
+                }
+            }
+        } message: {
+            Text("Apakah Anda yakin ingin mencetak struk untuk invoice \(lastCompletedOrder?.invoiceNumber ?? "")?")
+        }
+        .alert("Konfirmasi Cetak Label 4x6", isPresented: $showPrintLabelConfirm) {
+            Button("Batal", role: .cancel) { }
+            Button("Ya, Cetak") {
+                if let ord = lastCompletedOrder {
+                    printShippingLabel(ord)
+                }
+            }
+        } message: {
+            Text("Apakah Anda yakin ingin mencetak label resi 4x6 untuk \(lastCompletedOrder?.shippingInfo?.trackingNumber ?? "")?")
+        }
     }
 
     // MARK: - Helper Actions
@@ -636,10 +683,7 @@ struct CashierView: View {
         dataManager.processOrder(order)
         lastCompletedOrder = order
 
-        // Auto print receipt
-        printReceipt(order)
-
-        // Clear state
+        // Clear state (tanpa auto-print kaget, konfirmasi di success modal)
         cart.removeAll()
         discountAmount = 0
         cashGiven = ""
@@ -650,17 +694,33 @@ struct CashierView: View {
     }
 
     private func printReceipt(_ order: Order) {
+        guard btManager.isConnected else {
+            printStatusMsg = "Printer Bluetooth belum terhubung. Hubungkan printer di menu Pengaturan."
+            showPrintStatusAlert = true
+            return
+        }
         let data = PrinterEngine.buildReceiptData(order: order, config: dataManager.storeConfig)
-        btManager.sendData(data)
+        btManager.sendData(data) { success in
+            printStatusMsg = success ? "Struk kasir berhasil dicetak dan dipotong (Auto-Cut)!" : "Gagal mencetak struk."
+            showPrintStatusAlert = true
+        }
     }
 
     private func printShippingLabel(_ order: Order) {
+        guard btManager.isConnected else {
+            printStatusMsg = "Printer Bluetooth belum terhubung. Hubungkan printer di menu Pengaturan."
+            showPrintStatusAlert = true
+            return
+        }
         let data = PrinterEngine.buildTSPLLabelData(order: order, config: dataManager.storeConfig)
-        btManager.sendData(data)
+        btManager.sendData(data) { success in
+            printStatusMsg = success ? "Label pengiriman 4x6 berhasil dikirim ke printer label!" : "Gagal mencetak label."
+            showPrintStatusAlert = true
+        }
     }
 }
 
-// MARK: - Product Card Component
+// MARK: - Product Card Component (Liquid Glass Aesthetic)
 struct ProductCard: View {
     let product: Product
     let onAddToCart: () -> Void
@@ -679,12 +739,12 @@ struct ProductCard: View {
                             .cornerRadius(10)
                     } else {
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(LinearGradient(colors: [Color.blue.opacity(0.12), Color.purple.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .fill(LinearGradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(height: 110)
                             .overlay(
                                 Image(systemName: categoryIcon(product.category))
                                     .font(.system(size: 38))
-                                    .foregroundColor(.blue.opacity(0.7))
+                                    .foregroundColor(.cyan.opacity(0.85))
                             )
                     }
 
@@ -693,7 +753,7 @@ struct ProductCard: View {
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(product.isLowStock ? Color.red.opacity(0.9) : Color.black.opacity(0.65))
+                        .background(product.isLowStock ? Color.red.opacity(0.9) : Color.black.opacity(0.7))
                         .foregroundColor(.white)
                         .cornerRadius(8)
                         .padding(6)
@@ -703,25 +763,29 @@ struct ProductCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(product.name)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
                     Text(product.formattedPrice)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.blue)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.cyan)
 
                     Text(product.sku)
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.55))
                 }
                 .padding(.horizontal, 4)
                 .padding(.bottom, 6)
             }
             .padding(8)
-            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .background(Color.white.opacity(0.08))
             .cornerRadius(14)
-            .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.2), radius: 5, y: 2)
         }
         .buttonStyle(PlainButtonStyle())
     }
