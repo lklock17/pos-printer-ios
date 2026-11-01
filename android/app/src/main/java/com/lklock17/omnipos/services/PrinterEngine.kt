@@ -143,7 +143,8 @@ object PrinterEngine {
         // Header Kurir
         sb.append("BOX 20,20,780,120,3\r\n")
         sb.append("TEXT 40,45,\"4\",0,1,1,\"${ship.courier.uppercase()}\"\r\n")
-        sb.append("TEXT 480,45,\"4\",0,1,1,\"[\${ship.service.uppercase()}\]\"\r\n")
+        val serviceUpper = ship.service.uppercase()
+        sb.append("TEXT 480,45,\"4\",0,1,1,\"[$serviceUpper]\"\r\n")
 
         // Barcode Nomor Resi
         val tracking = if (ship.trackingNumber.isEmpty()) order.invoiceNumber else ship.trackingNumber
@@ -194,7 +195,8 @@ object PrinterEngine {
         // Garis Pembatas Barang
         sb.append("BOX 20,670,780,675,2\r\n")
         sb.append("TEXT 40,690,\"3\",0,1,1,\"DETAIL BARANG:\"\r\n")
-        sb.append("TEXT 480,690,\"3\",0,1,1,\"BERAT: ${String.format(\"%.1f\", ship.weightKg)} KG\"\r\n")
+        val weightStr = String.format(java.util.Locale.US, "%.1f", ship.weightKg)
+        sb.append("TEXT 480,690,\"3\",0,1,1,\"BERAT: $weightStr KG\"\r\n")
 
         var itemY = 725
         order.items.take(4).forEach { item ->
@@ -235,7 +237,8 @@ object PrinterEngine {
 
         // Header Kurir
         sb.append("TEXT 20,20,\"3\",0,1,1,\"${ship.courier.uppercase()}\"\r\n")
-        sb.append("TEXT 280,20,\"3\",0,1,1,\"[\${ship.service.take(8).uppercase()}\]\"\r\n")
+        val serviceShort = ship.service.take(8).uppercase()
+        sb.append("TEXT 280,20,\"3\",0,1,1,\"[$serviceShort]\"\r\n")
         sb.append("BOX 10,48,454,50,1\r\n")
 
         // Barcode Nomor Resi

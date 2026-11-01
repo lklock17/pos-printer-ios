@@ -543,6 +543,7 @@ private fun Label4x6Preview(ship: ShippingInfo, config: StoreConfig) {
             Spacer(modifier = Modifier.height(6.dp))
 
             // COD & Weight
+            val weightDisplay = String.format(java.util.Locale.US, "%.1f", ship.weightKg)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -554,7 +555,7 @@ private fun Label4x6Preview(ship: ShippingInfo, config: StoreConfig) {
                     color = Color.Black
                 )
                 Text(
-                    text = "BERAT: ${String.format(\"%.1f\", ship.weightKg)} KG",
+                    text = "BERAT: $weightDisplay KG",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
