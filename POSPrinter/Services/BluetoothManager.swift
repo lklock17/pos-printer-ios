@@ -250,6 +250,10 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
     }
 
+    func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        // Notifikasi CoreBluetooth buffer internal siap menerima paket berikutnya
+    }
+
     // MARK: - Kirim Data ESC/POS & TSPL
     func sendData(_ data: Data, completion: ((Bool) -> Void)? = nil) {
         guard let peripheral = targetPeripheral, let char = writeCharacteristic else {
@@ -259,16 +263,21 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
 
         let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-        let chunkSize = 120 // Ukuran aman untuk MTU BLE di iOS
+        let chunkSize = 100 // Paket BLE stabil untuk UART MCU Kassen MT200A (19200 baud)
         var offset = 0
 
         DispatchQueue.global(qos: .userInitiated).async {
             while offset < data.count {
+                if writeType == .withoutResponse {
+                    while !peripheral.canSendWriteWithoutResponse {
+                        Thread.sleep(forTimeInterval: 0.005)
+                    }
+                }
                 let thisChunkSize = min(chunkSize, data.count - offset)
                 let chunk = data.subdata(in: offset..<(offset + thisChunkSize))
                 peripheral.writeValue(chunk, for: char, type: writeType)
                 offset += thisChunkSize
-                Thread.sleep(forTimeInterval: 0.04) // Delay 40ms antar paket agar buffer printer stabil
+                Thread.sleep(forTimeInterval: 0.012) // 12ms jeda antar paket
             }
 
             DispatchQueue.main.async {
@@ -283,7 +292,7 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     func sendBatchLabels(
         labels: [Data],
         tearOffRaster: Data? = nil,
-        interLabelDelay: TimeInterval = 0.8,
+        interLabelDelay: TimeInterval = 1.3,
         onProgress: ((Int, Int) -> Void)? = nil,
         completion: ((Bool, String?) -> Void)? = nil
     ) {
@@ -296,8 +305,7 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
 
         let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-        let maxChunk = min(180, peripheral.maximumWriteValueLength(for: writeType))
-        let chunkSize = max(60, maxChunk)
+        let chunkSize = 100
         let total = labels.count
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -306,7 +314,7 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             peripheral.writeValue(initCmd, for: char, type: writeType)
             Thread.sleep(forTimeInterval: 0.05)
 
-            // 2. Kirim tiap label berurutan dengan streaming cepat (3ms) agar cetakan mulus lancar
+            // 2. Kirim tiap label berurutan dengan flow control dan pacing 12ms persis UART 19200 baud
             for (idx, labelData) in labels.enumerated() {
                 DispatchQueue.main.async {
                     onProgress?(idx + 1, total)
@@ -314,28 +322,38 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
                 var offset = 0
                 while offset < labelData.count {
+                    if writeType == .withoutResponse {
+                        while !peripheral.canSendWriteWithoutResponse {
+                            Thread.sleep(forTimeInterval: 0.005)
+                        }
+                    }
                     let thisChunkSize = min(chunkSize, labelData.count - offset)
                     let chunk = labelData.subdata(in: offset..<(offset + thisChunkSize))
                     peripheral.writeValue(chunk, for: char, type: writeType)
                     offset += thisChunkSize
-                    Thread.sleep(forTimeInterval: 0.003) // 3ms jeda mikro agar printer tidak tersendat-sendat
+                    Thread.sleep(forTimeInterval: 0.012) // 12ms jeda mikro stabil
                 }
 
-                // Jeda fisik motor printer melangkah maju antar stiker
+                // Jeda fisik motor printer melangkah maju antar stiker (Persis Android: 1.3 detik / 1300ms)
                 Thread.sleep(forTimeInterval: interLabelDelay)
             }
 
-            // 3. Kirim stiker kosong penutup (tear off blank 284 dots) untuk mendorong ke pisau sobek
+            // 3. Kirim stiker kosong penutup (tear off blank 284 dots persis Android) untuk mendorong ke pisau sobek
             if let tearOff = tearOffRaster {
                 var offset = 0
                 while offset < tearOff.count {
+                    if writeType == .withoutResponse {
+                        while !peripheral.canSendWriteWithoutResponse {
+                            Thread.sleep(forTimeInterval: 0.005)
+                        }
+                    }
                     let thisChunkSize = min(chunkSize, tearOff.count - offset)
                     let chunk = tearOff.subdata(in: offset..<(offset + thisChunkSize))
                     peripheral.writeValue(chunk, for: char, type: writeType)
                     offset += thisChunkSize
-                    Thread.sleep(forTimeInterval: 0.003)
+                    Thread.sleep(forTimeInterval: 0.012)
                 }
-                Thread.sleep(forTimeInterval: 0.5)
+                Thread.sleep(forTimeInterval: 1.0) // Persis Android delay 1000ms setelah tear-off
             }
 
             DispatchQueue.main.async {

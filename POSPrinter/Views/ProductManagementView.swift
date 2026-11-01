@@ -486,8 +486,8 @@ struct PrintBarcodeTagSheet: View {
         let storeName = dataManager.storeConfig.storeName.isEmpty ? "OMNIPOS STORE" : dataManager.storeConfig.storeName
         let singleLabel = PrinterEngine.buildSingleProductBarcodeTag55x30Raster(product: product, storeName: storeName)
         let labels = Array(repeating: singleLabel, count: quantity)
-        // 120 dot (~15mm) untuk memajukan tepat ke bilah pemotong/sobek tanpa membuang 1 stiker penuh
-        let tearOff = PrinterEngine.createBlankEscPosRaster(width: 384, height: 120)
+        // 284 dot persis Android untuk memajukan stiker melewati bilah pemotong/sobekan
+        let tearOff = PrinterEngine.createBlankEscPosRaster(width: 384, height: 284)
 
         isPrinting = true
         statusMessage = "Sedang mencetak 1 dari \(quantity)..."
@@ -495,7 +495,7 @@ struct PrintBarcodeTagSheet: View {
         btManager.sendBatchLabels(
             labels: labels,
             tearOffRaster: tearOff,
-            interLabelDelay: 0.8,
+            interLabelDelay: 1.3,
             onProgress: { current, total in
                 statusMessage = "Sedang mencetak \(current) dari \(total)..."
             },
