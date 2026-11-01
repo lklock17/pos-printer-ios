@@ -1,144 +1,752 @@
 import SwiftUI
 
 struct CashierView: View {
-    @ObservedObject var bluetooth = BluetoothManager.shared
-    @State private var config = ReceiptConfig.load()
-    @State private var items: [ReceiptItem] = [
-        ReceiptItem(name: "Kopi Latte", price: 25000, quantity: 1),
-        ReceiptItem(name: "Roti Cokelat", price: 15000, quantity: 2)
-    ]
-    @State private var newItemName = ""
-    @State private var newItemPrice = ""
-    @State private var newItemQty = "1"
-    @State private var cashPaidText = "60000"
-    @State private var isPrinting = false
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var btManager = BluetoothManager.shared
 
-    var grandTotal: Int {
-        items.reduce(0) { $0 + $1.subtotal }
+    @State private var searchQuery: String = ""
+    @State private var selectedCategory: String = "Semua"
+    @State private var cart: [OrderItem] = []
+    @State private var showCartSheet: Bool = false
+    @State private var showPaymentSheet: Bool = false
+    @State private var showShippingModal: Bool = false
+    
+    // Transaksi State
+    @State private var orderType: OrderType = .offline
+    @State private var shippingInfo: ShippingInfo = ShippingInfo()
+    @State private var discountAmount: Double = 0.0
+    @State private var paymentMethod: PaymentMethod = .cash
+    @State private var cashGiven: String = ""
+    @State private var lastCompletedOrder: Order? = nil
+    @State private var showSuccessModal: Bool = false
+
+    var filteredProducts: [Product] {
+        dataManager.products.filter { p in
+            let matchCategory = (selectedCategory == "Semua" || p.category == selectedCategory)
+            let matchQuery = searchQuery.isEmpty || p.name.localizedCaseInsensitiveContains(searchQuery) || p.sku.localizedCaseInsensitiveContains(searchQuery) || p.barcode.localizedCaseInsensitiveContains(searchQuery)
+            return matchCategory && matchQuery
+        }
     }
+
+    var cartTotalItems: Int {
+        cart.reduce(0) { $0 + $1.quantity }
+    }
+
+    var cartSubtotal: Double {
+        cart.reduce(0) { $0 + $1.subtotal }
+    }
+
+    var cartTax: Double {
+        guard dataManager.storeConfig.isTaxEnabled else { return 0 }
+        let afterDisc = max(0, cartSubtotal - discountAmount)
+        return afterDisc * (dataManager.storeConfig.taxRate / 100.0)
+    }
+
+    var cartGrandTotal: Double {
+        max(0, cartSubtotal - discountAmount) + cartTax
+    }
+
+    let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
 
     var body: some View {
         NavigationView {
-            Form {
-                // Section Status Printer
-                Section(header: Text("Status Printer")) {
-                    HStack {
-                        Image(systemName: bluetooth.isConnected ? "printer.fill" : "printer.slash")
-                            .foregroundColor(bluetooth.isConnected ? .green : .red)
-                        VStack(alignment: .leading) {
-                            Text(bluetooth.connectedPrinterName)
-                                .font(.headline)
-                            Text(bluetooth.statusMessage)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                // Top Search Bar
+                searchBarSection
+
+                // Category Chips Selector
+                categoryChipsSection
+
+                // Product Grid View
+                ScrollView {
+                    if filteredProducts.isEmpty {
+                        emptyStateView
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 14) {
+                            ForEach(filteredProducts) { product in
+                                ProductCard(product: product) {
+                                    addToCart(product)
+                                }
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 90) // space for floating cart bar
                     }
                 }
-
-                // Section Daftar Item Belanja
-                Section(header: Text("Daftar Pesanan")) {
-                    ForEach($items) { $item in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(item.name).font(.subheadline).bold()
-                                Text("\(ReceiptBuilder.formatRupiah(item.price)) x \(item.quantity)")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Text(ReceiptBuilder.formatRupiah(item.subtotal))
-                                .font(.subheadline)
-                            Stepper("", value: $item.quantity, in: 1...99)
-                                .labelsHidden()
-                        }
-                    }
-                    .onDelete { indexSet in
-                        items.remove(atOffsets: indexSet)
-                    }
-
-                    // Tambah Item Cepat
-                    HStack {
-                        TextField("Nama Produk", text: $newItemName)
-                        TextField("Harga", text: $newItemPrice)
-                            .keyboardType(.numberPad)
-                            .frame(width: 80)
-                        Button(action: addItem) {
-                            Image(systemName: "plus.circle.fill")
+            }
+            .background(Color(UIColor.systemGroupedBackground))
+            .navigationTitle("Kasir POS")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showCartSheet = true }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "cart.fill")
+                                .font(.system(size: 18))
                                 .foregroundColor(.blue)
-                        }
-                    }
-                }
 
-                // Section Pembayaran
-                Section(header: Text("Total & Pembayaran")) {
-                    HStack {
-                        Text("TOTAL AKHIR").bold()
-                        Spacer()
-                        Text(ReceiptBuilder.formatRupiah(grandTotal))
-                            .font(.title3).bold().foregroundColor(.blue)
-                    }
-
-                    HStack {
-                        Text("Uang Bayar:")
-                        Spacer()
-                        TextField("0", text: $cashPaidText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-
-                    if let cash = Int(cashPaidText), cash >= grandTotal {
-                        HStack {
-                            Text("Kembalian:")
-                            Spacer()
-                            Text(ReceiptBuilder.formatRupiah(cash - grandTotal))
-                                .foregroundColor(.green).bold()
-                        }
-                    }
-                }
-
-                // Tombol Cetak
-                Section {
-                    Button(action: printReceipt) {
-                        HStack {
-                            Spacer()
-                            if isPrinting {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                Text(" Mencetak...")
-                            } else {
-                                Image(systemName: "printer.fill")
-                                Text(" Cetak Struk & Auto Cut")
+                            if cartTotalItems > 0 {
+                                Text("\(cartTotalItems)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(Color.red)
+                                    .clipShape(Circle())
+                                    .offset(x: 10, y: -8)
                             }
-                            Spacer()
                         }
-                        .padding(8)
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !cart.isEmpty {
+                    floatingCartBar
+                }
+            }
+            .sheet(isPresented: $showCartSheet) {
+                cartSheetView
+            }
+            .sheet(isPresented: $showPaymentSheet) {
+                paymentSheetView
+            }
+            .sheet(isPresented: $showShippingModal) {
+                shippingInputSheet
+            }
+            .sheet(isPresented: $showSuccessModal) {
+                successModalView
+            }
+        }
+    }
+
+    // MARK: - Search Bar
+    private var searchBarSection: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.gray)
+            TextField("Cari produk, SKU, barcode...", text: $searchQuery)
+            if !searchQuery.isEmpty {
+                Button(action: { searchQuery = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(10)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Category Chips
+    private var categoryChipsSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(dataManager.categories, id: \.self) { cat in
+                    let isSelected = selectedCategory == cat
+                    Button(action: {
+                        selectedCategory = cat
+                    }) {
+                        Text(cat)
+                            .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(isSelected ? Color.blue : Color(UIColor.secondarySystemGroupedBackground))
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .cornerRadius(20)
+                            .shadow(color: Color.black.opacity(isSelected ? 0.15 : 0.03), radius: 3, y: 1)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+    }
+
+    // MARK: - Empty State
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 50))
+                .foregroundColor(.gray.opacity(0.6))
+            Text("Tidak ada produk ditemukan")
+                .font(.headline)
+                .foregroundColor(.gray)
+            Text("Tambahkan produk di menu Produk & Stok.")
+                .font(.subheadline)
+                .foregroundColor(.gray.opacity(0.8))
+        }
+        .padding(.top, 80)
+    }
+
+    // MARK: - Floating Cart Bar
+    private var floatingCartBar: some View {
+        Button(action: { showCartSheet = true }) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(cartTotalItems) Produk di Keranjang")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.85))
+                    Text(CurrencyHelper.format(cartGrandTotal))
                         .font(.headline)
                         .foregroundColor(.white)
+                }
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Text("Buka Kasir")
+                        .font(.subheadline.bold())
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.title3)
+                }
+                .foregroundColor(.white)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(colors: [Color.blue, Color(red: 0.1, green: 0.4, blue: 0.9)],
+                               startPoint: .leading, endPoint: .trailing)
+            )
+            .cornerRadius(16)
+            .shadow(color: Color.blue.opacity(0.35), radius: 8, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+    }
+
+    // MARK: - Cart Sheet
+    private var cartSheetView: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Order Type Selector (Offline vs Shipping)
+                Picker("Tipe Pesanan", selection: $orderType) {
+                    ForEach(OrderType.allCases, id: \.self) { type in
+                        Text(type.rawValue).tag(type)
                     }
-                    .listRowBackground(bluetooth.isConnected ? Color.blue : Color.gray)
-                    .disabled(!bluetooth.isConnected || isPrinting || items.isEmpty)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+                // Shipping info quick banner if shipping chosen
+                if orderType == .shipping {
+                    Button(action: { showShippingModal = true }) {
+                        HStack {
+                            Image(systemName: "shippingbox.fill")
+                                .foregroundColor(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(shippingInfo.recipientName.isEmpty ? "Isi Data Alamat & Kurir Pengiriman" : "Tujuan: \(shippingInfo.recipientName) (\(shippingInfo.courier))")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.primary)
+                                Text(shippingInfo.isCOD ? "COD: \(CurrencyHelper.format(shippingInfo.codAmount))" : "Paket Standar Non-COD")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.12))
+                        .cornerRadius(10)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+                }
+
+                // Cart Item List
+                List {
+                    ForEach(cart) { item in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.product.name)
+                                    .font(.headline)
+                                Text(CurrencyHelper.format(item.product.price) + " / " + item.product.unit)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            HStack(spacing: 10) {
+                                Button(action: { decreaseItem(item) }) {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.title3)
+                                        .foregroundColor(.red.opacity(0.8))
+                                }
+
+                                Text("\(item.quantity)")
+                                    .font(.headline)
+                                    .frame(minWidth: 24)
+
+                                Button(action: { increaseItem(item) }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.title3)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            Text(CurrencyHelper.format(item.subtotal))
+                                .font(.subheadline.bold())
+                                .frame(minWidth: 80, alignment: .trailing)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .onDelete(perform: removeCartItems)
+                }
+                .listStyle(.insetGrouped)
+
+                // Summary & Checkout
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Subtotal")
+                        Spacer()
+                        Text(CurrencyHelper.format(cartSubtotal))
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                    if dataManager.storeConfig.isTaxEnabled {
+                        HStack {
+                            Text("PPN (\(Int(dataManager.storeConfig.taxRate))%)")
+                            Spacer()
+                            Text(CurrencyHelper.format(cartTax))
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Total Pembayaran")
+                            .font(.headline)
+                        Spacer()
+                        Text(CurrencyHelper.format(cartGrandTotal))
+                            .font(.title3.bold())
+                            .foregroundColor(.blue)
+                    }
+
+                    Button(action: {
+                        showCartSheet = false
+                        showPaymentSheet = true
+                    }) {
+                        Text("Lanjutkan ke Pembayaran")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(16)
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+            }
+            .navigationTitle("Keranjang Belanja")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Tutup") { showCartSheet = false }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !cart.isEmpty {
+                        Button("Kosongkan") { cart.removeAll() }
+                            .foregroundColor(.red)
+                    }
                 }
             }
-            .navigationTitle("Kasir POS")
-            .onAppear {
-                config = ReceiptConfig.load()
+        }
+    }
+
+    // MARK: - Shipping Input Sheet
+    private var shippingInputSheet: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Ekspedisi & Kurir")) {
+                    Picker("Kurir", selection: $shippingInfo.courier) {
+                        ForEach(["J&T Express", "JNE", "SiCepat", "Shopee Xpress", "GoSend", "GrabExpress", "Anteraja", "Lion Parcel"], id: \.self) {
+                            Text($0)
+                        }
+                    }
+                    Picker("Layanan", selection: $shippingInfo.service) {
+                        ForEach(["REGULER", "NEXT DAY", "CARGO", "HEMAT", "INSTANT", "SAMEDAY"], id: \.self) {
+                            Text($0)
+                        }
+                    }
+                    TextField("No. Resi / AWB (Opsional/Auto)", text: $shippingInfo.trackingNumber)
+                    HStack {
+                        Text("Berat Paket (Kg)")
+                        Spacer()
+                        TextField("1.0", value: $shippingInfo.weightKg, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                Section(header: Text("Tujuan & Penerima")) {
+                    TextField("Nama Penerima", text: $shippingInfo.recipientName)
+                    TextField("No. Telepon / WA Penerima", text: $shippingInfo.recipientPhone)
+                        .keyboardType(.phonePad)
+                    TextEditor(text: $shippingInfo.recipientAddress)
+                        .frame(minHeight: 60)
+                    TextField("Kode Pos", text: $shippingInfo.postalCode)
+                        .keyboardType(.numberPad)
+                }
+
+                Section(header: Text("Metode COD (Cash on Delivery)")) {
+                    Toggle("Paket COD", isOn: $shippingInfo.isCOD)
+                    if shippingInfo.isCOD {
+                        HStack {
+                            Text("Nominal Tagihan COD")
+                            Spacer()
+                            TextField("0", value: $shippingInfo.codAmount, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                }
+
+                Section(header: Text("Instruksi Pengiriman")) {
+                    TextField("e.g. Fragile / Jangan Dibanting", text: $shippingInfo.notes)
+                }
+            }
+            .navigationTitle("Data Pengiriman 4x6")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Simpan") {
+                        if shippingInfo.isCOD && shippingInfo.codAmount == 0 {
+                            shippingInfo.codAmount = cartGrandTotal
+                        }
+                        showShippingModal = false
+                    }
+                    .font(.headline)
+                }
             }
         }
     }
 
-    func addItem() {
-        guard !newItemName.isEmpty, let price = Int(newItemPrice) else { return }
-        let qty = Int(newItemQty) ?? 1
-        items.append(ReceiptItem(name: newItemName, price: price, quantity: qty))
-        newItemName = ""
-        newItemPrice = ""
+    // MARK: - Payment Sheet View
+    private var paymentSheetView: some View {
+        NavigationView {
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    Text("Total Tagihan")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text(CurrencyHelper.format(cartGrandTotal))
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.blue)
+                }
+                .padding(.top, 10)
+
+                // Metode Bayar
+                Picker("Metode Pembayaran", selection: $paymentMethod) {
+                    ForEach(PaymentMethod.allCases, id: \.self) { method in
+                        Text(method.rawValue).tag(method)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+
+                if paymentMethod == .cash {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Uang Diterima:")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+
+                        TextField("Rp 0", text: $cashGiven)
+                            .font(.title2.bold())
+                            .keyboardType(.numberPad)
+                            .padding(12)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(10)
+
+                        // Quick cash chips
+                        HStack(spacing: 8) {
+                            Button("Uang Pas") {
+                                cashGiven = "\(Int(cartGrandTotal))"
+                            }
+                            .buttonStyle(QuickCashStyle())
+
+                            Button("50.000") { cashGiven = "50000" }
+                                .buttonStyle(QuickCashStyle())
+
+                            Button("100.000") { cashGiven = "100000" }
+                                .buttonStyle(QuickCashStyle())
+
+                            Button("200.000") { cashGiven = "200000" }
+                                .buttonStyle(QuickCashStyle())
+                        }
+
+                        let given = Double(cashGiven) ?? 0
+                        let change = max(0, given - cartGrandTotal)
+                        HStack {
+                            Text("Kembalian:")
+                                .font(.headline)
+                            Spacer()
+                            Text(CurrencyHelper.format(change))
+                                .font(.title3.bold())
+                                .foregroundColor(given >= cartGrandTotal ? .green : .red)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                Spacer()
+
+                // Final Pay & Print Button
+                Button(action: finalizeOrder) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Selesaikan & Cetak Struk")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.green)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
+            .navigationTitle("Pembayaran")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Kembali") { showPaymentSheet = false }
+                }
+            }
+        }
     }
 
-    func printReceipt() {
-        isPrinting = true
-        let cash = Int(cashPaidText) ?? grandTotal
-        let data = ReceiptBuilder.buildReceipt(config: config, items: items, cashPaid: cash)
-        bluetooth.sendData(data) { _ in
-            isPrinting = false
+    // MARK: - Success Modal
+    private var successModalView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 64))
+                .foregroundColor(.green)
+
+            Text("Transaksi Selesai!")
+                .font(.title2.bold())
+
+            if let order = lastCompletedOrder {
+                Text(order.invoiceNumber)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Text(order.formattedTotal)
+                    .font(.title.bold())
+                    .foregroundColor(.blue)
+
+                Divider()
+
+                VStack(spacing: 12) {
+                    Button(action: {
+                        printReceipt(order)
+                    }) {
+                        HStack {
+                            Image(systemName: "printer.fill")
+                            Text("Cetak Struk Thermal (Auto-Cut)")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                    }
+
+                    if order.orderType == .shipping {
+                        Button(action: {
+                            printShippingLabel(order)
+                        }) {
+                            HStack {
+                                Image(systemName: "shippingbox.fill")
+                                Text("Cetak Label Pengiriman 4x6")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+
+            Spacer()
+
+            Button("Transaksi Baru") {
+                showSuccessModal = false
+            }
+            .font(.headline)
+            .padding(.bottom, 20)
         }
+        .padding(.top, 40)
+    }
+
+    // MARK: - Helper Actions
+    private func addToCart(_ product: Product) {
+        if let idx = cart.firstIndex(where: { $0.product.id == product.id }) {
+            cart[idx].quantity += 1
+        } else {
+            cart.append(OrderItem(product: product, quantity: 1))
+        }
+    }
+
+    private func increaseItem(_ item: OrderItem) {
+        if let idx = cart.firstIndex(where: { $0.id == item.id }) {
+            cart[idx].quantity += 1
+        }
+    }
+
+    private func decreaseItem(_ item: OrderItem) {
+        if let idx = cart.firstIndex(where: { $0.id == item.id }) {
+            if cart[idx].quantity > 1 {
+                cart[idx].quantity -= 1
+            } else {
+                cart.remove(at: idx)
+            }
+        }
+    }
+
+    private func removeCartItems(at offsets: IndexSet) {
+        cart.remove(atOffsets: offsets)
+    }
+
+    private func finalizeOrder() {
+        let givenAmount = Double(cashGiven) ?? cartGrandTotal
+        let order = Order(
+            items: cart,
+            discount: discountAmount,
+            taxRate: dataManager.storeConfig.isTaxEnabled ? dataManager.storeConfig.taxRate : 0,
+            paymentMethod: paymentMethod,
+            paymentAmount: givenAmount,
+            orderType: orderType,
+            shippingInfo: orderType == .shipping ? shippingInfo : nil
+        )
+
+        dataManager.processOrder(order)
+        lastCompletedOrder = order
+
+        // Auto print receipt
+        printReceipt(order)
+
+        // Clear state
+        cart.removeAll()
+        discountAmount = 0
+        cashGiven = ""
+        shippingInfo = ShippingInfo()
+        orderType = .offline
+        showPaymentSheet = false
+        showSuccessModal = true
+    }
+
+    private func printReceipt(_ order: Order) {
+        let data = PrinterEngine.buildReceiptData(order: order, config: dataManager.storeConfig)
+        btManager.sendData(data)
+    }
+
+    private func printShippingLabel(_ order: Order) {
+        let data = PrinterEngine.buildTSPLLabelData(order: order, config: dataManager.storeConfig)
+        btManager.sendData(data)
+    }
+}
+
+// MARK: - Product Card Component
+struct ProductCard: View {
+    let product: Product
+    let onAddToCart: () -> Void
+
+    var body: some View {
+        Button(action: onAddToCart) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Product Image or Icon
+                ZStack(alignment: .topTrailing) {
+                    if let b64 = product.imageBase64, let uiImage = ImageHelper.fromBase64(b64) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(height: 110)
+                            .clipped()
+                            .cornerRadius(10)
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(LinearGradient(colors: [Color.blue.opacity(0.12), Color.purple.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(height: 110)
+                            .overlay(
+                                Image(systemName: categoryIcon(product.category))
+                                    .font(.system(size: 38))
+                                    .foregroundColor(.blue.opacity(0.7))
+                            )
+                    }
+
+                    // Stock Pill
+                    Text("Stok: \(product.stock)")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(product.isLowStock ? Color.red.opacity(0.9) : Color.black.opacity(0.65))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .padding(6)
+                }
+
+                // Info
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(product.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    Text(product.formattedPrice)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.blue)
+
+                    Text(product.sku)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 6)
+            }
+            .padding(8)
+            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .cornerRadius(14)
+            .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private func categoryIcon(_ cat: String) -> String {
+        switch cat.lowercased() {
+        case "makanan": return "fork.knife"
+        case "minuman": return "cup.and.saucer.fill"
+        case "snack": return "takeoutbag.and.cup.and.straw.fill"
+        case "pakaian": return "tshirt.fill"
+        case "elektronik": return "cable.connector.horizontal"
+        case "aksesoris": return "eyeglasses"
+        default: return "bag.fill"
+        }
+    }
+}
+
+struct QuickCashStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.bold())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(configuration.isPressed ? Color.blue.opacity(0.2) : Color(UIColor.systemGray5))
+            .foregroundColor(.primary)
+            .cornerRadius(8)
     }
 }

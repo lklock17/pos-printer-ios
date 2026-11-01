@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>POS Printer</string>
+    <string>OmniPOS</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -23,9 +23,13 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Aplikasi membutuhkan izin Bluetooth untuk mencari dan mencetak ke printer thermal Kassen MT200A.</string>
+    <string>OmniPOS membutuhkan Bluetooth untuk menghubungkan mesin printer kasir thermal dan printer label resi pengiriman.</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>Aplikasi membutuhkan izin Bluetooth untuk mengirim data struk dan auto-cut ke printer.</string>
+    <string>OmniPOS membutuhkan Bluetooth untuk mengirimkan data struk kasir, auto-cut kertas, dan label pengiriman 4x6.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>OmniPOS membutuhkan akses kamera untuk mengambil foto produk inventaris dan memindai barcode.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>OmniPOS membutuhkan akses galeri foto untuk memilih gambar produk katalog toko.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -34,6 +38,7 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>posprint</string>
+                <string>omnipos</string>
             </array>
         </dict>
     </array>

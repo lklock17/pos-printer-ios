@@ -41,23 +41,21 @@ jobs:
           cp -r build/POSPrinter.xcarchive/Products/Applications/*.app build/Payload/
           cd build
           zip -r POSPrinter.ipa Payload
+          cp POSPrinter.ipa OmniPOS.ipa
           echo "=== IPA FILE CREATED SUCCESSFULLY ==="
-          ls -lh POSPrinter.ipa
+          ls -lh POSPrinter.ipa OmniPOS.ipa
 
       - name: Upload IPA as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POSPrinter-iOS-IPA
-          path: build/POSPrinter.ipa
+          name: OmniPOS-iOS-IPA
+          path: |
+            build/POSPrinter.ipa
+            build/OmniPOS.ipa
           retention-days: 30
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete latest --yes || true
-          git tag -d latest || true
-          git push origin :refs/tags/latest || true
-          gh release create latest build/POSPrinter.ipa \
-            --title "POS Printer iOS (Latest IPA)" \
-            --notes "File IPA untuk printer thermal Bluetooth Kassen MT200A. Siap di-install ke iPhone/iPad menggunakan Sideloadly, AltStore, TrollStore, atau Scarlet."
+          gh release upload latest build/POSPrinter.ipa build/OmniPOS.ipa --clobber || gh release create latest build/POSPrinter.ipa build/OmniPOS.ipa --title "OmniPOS & Thermal Suite (Latest)" --notes "OmniPOS Universal: Aplikasi Kasir POS & Cetak Label Pengiriman 4x6 untuk iOS (Sideload via Sideloadly/AltStore/TrollStore/Scarlet)."
