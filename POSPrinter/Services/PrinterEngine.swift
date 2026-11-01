@@ -541,8 +541,7 @@ public class PrinterEngine {
         for (idx, char) in pattern.enumerated() {
             let w = CGFloat(Int(String(char)) ?? 1) * moduleW
             if idx % 2 == 0 {
-                // Tambahkan ekstra 0.5 dot agar baris barcode hitam pekat dan tebal
-                ctx.fill(CGRect(x: curX, y: barY, width: w + 0.5, height: barH))
+                ctx.fill(CGRect(x: curX, y: barY, width: w, height: barH))
             }
             curX += w
         }
@@ -593,17 +592,11 @@ public class PrinterEngine {
         }
         UIGraphicsEndImageContext()
 
-        // Ekstraksi 1-bit ESC/POS Raster (GS v 0) langsung dari pixel CGImage
+        // Ekstraksi 1-bit ESC/POS Raster (GS v 0) langsung dari pixel CGImage murni persis Android
         let bytesPerRow = 48
         var rasterData = Data()
 
-        // Perintah ESC/POS untuk menaikkan kepadatan & waktu pemanasan kepala thermal (Density & Heat Time Max)
-        // ESC 7 n1 n2 n3: max heating parameter untuk Kassen MT200A / POS-58
-        rasterData.append(contentsOf: [0x1B, 0x37, 0x07, 0xF0, 0x02])
-        // DC2 T: Kepadatan cetak maksimal
-        rasterData.append(contentsOf: [0x12, 0x54])
-
-        // Header GS v 0
+        // Header GS v 0 murni tanpa byte perintah asing
         let xL = UInt8(bytesPerRow & 0xFF)
         let xH = UInt8((bytesPerRow >> 8) & 0xFF)
         let yL = UInt8(height & 0xFF)
@@ -619,7 +612,7 @@ public class PrinterEngine {
         let cgBytesPerRow = cgImage.bytesPerRow
         let bytesPerPixel = max(1, cgImage.bitsPerPixel / 8)
 
-        // Konversi ke 1-bit dengan ambang batas (threshold) 210 agar garis anti-aliasing menjadi hitam pekat
+        // Konversi ke 1-bit dengan threshold 170 agar teks dan barcode tebal solid tanpa memicu self-test
         for y in 0..<height {
             let rowOffset = y * cgBytesPerRow
             for byteIdx in 0..<bytesPerRow {
@@ -632,8 +625,7 @@ public class PrinterEngine {
                         let g = Int(rawPtr[pixelOffset + 1])
                         let bCol = Int(rawPtr[pixelOffset + 2])
                         let gray = (r * 299 + g * 587 + bCol * 114) / 1000
-                        // Threshold 210: Menjamin ketebalan maksimal teks dan garis barcode stiker
-                        if gray < 210 {
+                        if gray < 170 {
                             b |= (1 << (7 - bit))
                         }
                     }
