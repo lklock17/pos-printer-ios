@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lklock17.omnipos.models.BarcodeHelper
@@ -245,13 +246,15 @@ private fun ProductManagementRow(
 ) {
     LiquidGlassCard {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onEdit),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail Category Icon (Matching iOS)
+            // 1. Thumbnail Category Icon (Matching iOS 50dp)
             Surface(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(50.dp)
                     .clip(RoundedCornerShape(12.dp)),
                 color = Color(0x2EFFFFFF)
             ) {
@@ -265,14 +268,17 @@ private fun ProductManagementRow(
 
             Spacer(modifier = Modifier.width(12.dp))
 
+            // 2. Info Detail (Name, Category + SKU, Price)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = product.name,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         color = Color(0x332563EB),
@@ -293,7 +299,7 @@ private fun ProductManagementRow(
                         color = Color.Gray
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = Order.formatRupiah(product.price),
                     fontSize = 14.sp,
@@ -302,40 +308,14 @@ private fun ProductManagementRow(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Tombol Cetak Barcode Stiker
-                FilledIconButton(
-                    onClick = onPrintBarcode,
-                    modifier = Modifier.size(34.dp),
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x3310B981))
-                ) {
-                    Icon(Icons.Default.Print, contentDescription = "Cetak Barcode", tint = Color(0xFF10B981), modifier = Modifier.size(17.dp))
-                }
+            Spacer(modifier = Modifier.width(8.dp))
 
-                // Tombol Edit
-                FilledIconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(34.dp),
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x3338BDF8))
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-        Divider(color = Color(0x22FFFFFF))
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Stock Adjust Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 3. Kolom Kanan Rapi: Badge Stok di Atas & Tombol Aksi Bersih di Bawah (Matching iOS)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Stock Badge Pill
                 Surface(
                     color = if (product.isLowStock) Color(0x33EF4444) else Color(0x3310B981),
                     shape = RoundedCornerShape(6.dp)
@@ -348,29 +328,77 @@ private fun ProductManagementRow(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
-            }
 
-            // Quick - / + buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { onAdjustStock(-1) },
-                    modifier = Modifier.size(28.dp).clip(CircleShape).background(Color(0x33FFFFFF))
+                // Row Aksi: Cetak Barcode, Quick - / +, Delete
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "-1", tint = Color.White, modifier = Modifier.size(14.dp))
-                }
+                    // Tombol Cetak Barcode (Hijau)
+                    FilledIconButton(
+                        onClick = onPrintBarcode,
+                        modifier = Modifier.size(30.dp),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0x3310B981))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = "Cetak Barcode",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
 
-                IconButton(
-                    onClick = { onAdjustStock(1) },
-                    modifier = Modifier.size(28.dp).clip(CircleShape).background(Color(0xFF2563EB))
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "+1", tint = Color.White, modifier = Modifier.size(14.dp))
-                }
+                    // Quick Minus (-)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x28FFFFFF))
+                            .clickable { onAdjustStock(-1) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "-1",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
 
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(28.dp).clip(CircleShape).background(Color(0x33EF4444))
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                    // Quick Plus (+)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF2563EB))
+                            .clickable { onAdjustStock(1) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "+1",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // Delete (Merah Halus)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x22EF4444))
+                            .clickable { onDelete() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Hapus",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
                 }
             }
         }

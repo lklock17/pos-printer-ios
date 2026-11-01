@@ -462,7 +462,9 @@ public class PrinterEngine {
         let width: CGFloat = 384
         let height: CGFloat = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
         let size = CGSize(width: width, height: height)
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0 // Pastikan 1:1 pixel (bukan Retina 2x/3x) agar ukuran dot thermal printer presisi 384x264
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
 
         return renderer.image { ctx in
             let cg = ctx.cgContext

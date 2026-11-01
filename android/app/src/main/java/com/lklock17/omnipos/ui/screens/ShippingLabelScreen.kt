@@ -424,34 +424,46 @@ fun ShippingLabelScreen() {
                                         put("package_contents", "Pesanan OmniPOS")
                                     }.toString()
 
-                                    val host = DataManager.storeConfig.value.dymoBridgeHost.trim()
-                                    val primaryUrl = if (host.startsWith("http")) host else "http://$host/api/print-label"
+                                    val rawHost = DataManager.storeConfig.value.dymoBridgeHost.trim().ifEmpty { "192.168.18.169:8088" }
+                                    val cleanHost = rawHost.removePrefix("http://").removePrefix("https://").removeSuffix("/")
+                                    val primaryUrl = if (cleanHost.endsWith("/api/print-label")) {
+                                        "http://$cleanHost"
+                                    } else {
+                                        "http://$cleanHost/api/print-label"
+                                    }
                                     
                                     var success = false
+                                    var lastErr = ""
                                     try {
                                         val conn = (java.net.URL(primaryUrl).openConnection() as java.net.HttpURLConnection).apply {
                                             requestMethod = "POST"
                                             setRequestProperty("Content-Type", "application/json")
-                                            connectTimeout = 4000
-                                            readTimeout = 4000
+                                            connectTimeout = 5000
+                                            readTimeout = 5000
                                             doOutput = true
                                             outputStream.use { it.write(jsonPayload.toByteArray(Charsets.UTF_8)) }
                                         }
                                         success = conn.responseCode == 200
+                                        if (!success) {
+                                            lastErr = "HTTP ${conn.responseCode}: ${conn.responseMessage}"
+                                        }
                                     } catch (e: Exception) {
-                                        // Fallback to IP
-                                        try {
-                                            val fallbackConn = (java.net.URL("http://192.168.18.169:8088/api/print-label").openConnection() as java.net.HttpURLConnection).apply {
-                                                requestMethod = "POST"
-                                                setRequestProperty("Content-Type", "application/json")
-                                                connectTimeout = 4000
-                                                readTimeout = 4000
-                                                doOutput = true
-                                                outputStream.use { it.write(jsonPayload.toByteArray(Charsets.UTF_8)) }
+                                        lastErr = e.localizedMessage ?: e.javaClass.simpleName
+                                        // Fallback to default IP port 8088 if primary failed
+                                        if (!primaryUrl.contains("192.168.18.169:8088")) {
+                                            try {
+                                                val fallbackConn = (java.net.URL("http://192.168.18.169:8088/api/print-label").openConnection() as java.net.HttpURLConnection).apply {
+                                                    requestMethod = "POST"
+                                                    setRequestProperty("Content-Type", "application/json")
+                                                    connectTimeout = 4000
+                                                    readTimeout = 4000
+                                                    doOutput = true
+                                                    outputStream.use { it.write(jsonPayload.toByteArray(Charsets.UTF_8)) }
+                                                }
+                                                success = fallbackConn.responseCode == 200
+                                            } catch (ex: Exception) {
+                                                success = false
                                             }
-                                            success = fallbackConn.responseCode == 200
-                                        } catch (ex: Exception) {
-                                            success = false
                                         }
                                     }
 
@@ -459,7 +471,7 @@ fun ShippingLabelScreen() {
                                         if (success) {
                                             Toast.makeText(context, "✅ Berhasil! Label 4x6 telah dikirim dan tercetak di DYMO 4XL laptop.", Toast.LENGTH_LONG).show()
                                         } else {
-                                            Toast.makeText(context, "❌ Gagal menghubungi DYMO di laptop. Pastikan HP dan Laptop di Wi-Fi yang sama.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "❌ Gagal: $lastErr. Pastikan HP & Laptop di Wi-Fi yang sama (Target: $primaryUrl)", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 } catch (e: Exception) {

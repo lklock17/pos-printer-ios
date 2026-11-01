@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -80,7 +82,7 @@ fun CashierScreen() {
         LiquidGlassBackground(modifier = Modifier.padding(padding)) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Search Bar with Camera Barcode Scanner & Hardware Scanner Auto-Add
+                    // Compact iOS-Style Search Bar (Height 42dp) with Integrated Camera Barcode Scanner
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -88,61 +90,92 @@ fun CashierScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { query ->
-                                searchQuery = query
-                                val trimmed = query.trim()
-                                if (trimmed.length >= 6) {
-                                    val matched = DataManager.products.firstOrNull { 
-                                        it.barcode.isNotBlank() && it.barcode.equals(trimmed, ignoreCase = true)
-                                    }
-                                    if (matched != null) {
-                                        val existing = cart.indexOfFirst { it.product.id == matched.id }
-                                        if (existing >= 0) {
-                                            val current = cart[existing]
-                                            cart[existing] = current.copy(quantity = current.quantity + 1)
-                                        } else {
-                                            cart.add(OrderItem(product = matched, quantity = 1))
-                                        }
-                                        Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
-                                        searchQuery = ""
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("Cari produk atau scan barcode...", color = Color.Gray) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8)) },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Hapus", tint = Color.Gray)
-                                    }
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0x18FFFFFF),
-                                unfocusedContainerColor = Color(0x10FFFFFF),
-                                focusedBorderColor = Color(0xFF38BDF8),
-                                unfocusedBorderColor = Color(0x28FFFFFF)
+                        // Sleek Compact Search Field (42dp height)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0x18FFFFFF))
+                                .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(18.dp)
                             )
-                        )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Cari / scan barcode...",
+                                        color = Color.Gray,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = { query ->
+                                        searchQuery = query
+                                        val trimmed = query.trim()
+                                        if (trimmed.length >= 6) {
+                                            val matched = DataManager.products.firstOrNull {
+                                                it.barcode.isNotBlank() && it.barcode.equals(trimmed, ignoreCase = true)
+                                            }
+                                            if (matched != null) {
+                                                val existing = cart.indexOfFirst { it.product.id == matched.id }
+                                                if (existing >= 0) {
+                                                    val current = cart[existing]
+                                                    cart[existing] = current.copy(quantity = current.quantity + 1)
+                                                } else {
+                                                    cart.add(OrderItem(product = matched, quantity = 1))
+                                                }
+                                                Toast.makeText(context, "+1 ${matched.name} ditambahkan!", Toast.LENGTH_SHORT).show()
+                                                searchQuery = ""
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.White,
+                                        fontSize = 13.sp
+                                    ),
+                                    cursorBrush = SolidColor(Color(0xFF38BDF8)),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x33FFFFFF))
+                                        .clickable { searchQuery = "" },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Hapus",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
 
-                        // Tombol Kamera Barcode Scanner (Gradient Liquid Glass)
+                        // Compact Camera Barcode Scanner Button (42dp, Matching iOS)
                         Box(
                             modifier = Modifier
-                                .size(52.dp)
+                                .size(42.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(Color(0xFF2563EB), Color(0xFF06B6D4))
                                     )
                                 )
-                                .border(1.dp, Color(0x4DFFFFFF), RoundedCornerShape(12.dp))
                                 .clickable {
                                     try {
                                         val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
@@ -180,7 +213,12 @@ fun CashierScreen() {
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode Kamera", tint = Color.White)
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = "Scan Barcode Kamera",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
