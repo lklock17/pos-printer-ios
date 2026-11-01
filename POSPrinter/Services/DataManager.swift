@@ -7,6 +7,7 @@ public class DataManager: ObservableObject {
 
     @Published public var products: [Product] = []
     @Published public var orders: [Order] = []
+    @Published public var savedRecipients: [SavedRecipient] = []
     @Published public var categories: [String] = [
         "Semua", "Makanan", "Minuman", "Snack", "Pakaian", "Elektronik", "Aksesoris", "Lainnya"
     ]
@@ -14,6 +15,7 @@ public class DataManager: ObservableObject {
 
     private let productsFile = "omnipos_products.json"
     private let ordersFile = "omnipos_orders.json"
+    private let recipientsFile = "omnipos_recipients.json"
     private let configFile = "omnipos_config.json"
 
     private init() {
@@ -30,16 +32,21 @@ public class DataManager: ObservableObject {
         loadConfig()
         loadProducts()
         loadOrders()
+        loadRecipients()
 
         // Jika belum ada produk, buat sample data
         if products.isEmpty {
             createSampleProducts()
+        }
+        if savedRecipients.isEmpty {
+            createSampleRecipients()
         }
     }
 
     public func saveAll() {
         saveProducts()
         saveOrders()
+        saveRecipients()
         saveConfig()
     }
 
@@ -104,6 +111,60 @@ public class DataManager: ObservableObject {
         } catch {
             print("Error loading config: \(error)")
         }
+    }
+
+    // MARK: - Recipient Address Book
+    public func saveRecipients() {
+        let url = getDocumentsDirectory().appendingPathComponent(recipientsFile)
+        do {
+            let data = try JSONEncoder().encode(savedRecipients)
+            try data.write(to: url)
+        } catch {
+            print("Error saving recipients: \(error)")
+        }
+    }
+
+    public func loadRecipients() {
+        let url = getDocumentsDirectory().appendingPathComponent(recipientsFile)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            savedRecipients = try JSONDecoder().decode([SavedRecipient].self, from: data)
+        } catch {
+            print("Error loading recipients: \(error)")
+        }
+    }
+
+    public func saveOrUpdateRecipient(_ recipient: SavedRecipient) {
+        if let idx = savedRecipients.firstIndex(where: { $0.id == recipient.id || ($0.name.lowercased() == recipient.name.lowercased() && $0.phone == recipient.phone) }) {
+            var updated = recipient
+            updated.lastUsed = Date()
+            savedRecipients[idx] = updated
+        } else {
+            var newRecipient = recipient
+            newRecipient.lastUsed = Date()
+            savedRecipients.insert(newRecipient, at: 0)
+        }
+        saveRecipients()
+    }
+
+    public func deleteRecipient(_ recipient: SavedRecipient) {
+        savedRecipients.removeAll { $0.id == recipient.id }
+        saveRecipients()
+    }
+
+    public func deleteRecipient(at offsets: IndexSet) {
+        savedRecipients.remove(atOffsets: offsets)
+        saveRecipients()
+    }
+
+    private func createSampleRecipients() {
+        savedRecipients = [
+            SavedRecipient(name: "Budi Pratama", phone: "0812-9876-5432", address: "Jl. Merdeka No. 45, RT 02/05, Gambir, Jakarta Pusat", postalCode: "10110", defaultCourier: "J&T Express", notes: "Pagar hitam depan pos"),
+            SavedRecipient(name: "Siti Rahmawati", phone: "0856-1122-3344", address: "Komplek Graha Indah Blok C3 No. 12, Sukajadi, Bandung", postalCode: "40161", defaultCourier: "SiCepat", notes: "Titip satpam jika tidak ada orang"),
+            SavedRecipient(name: "Andi Saputra", phone: "0878-5544-3322", address: "Ruko Mega Boulevard No. 8, Wonokromo, Surabaya", postalCode: "60241", defaultCourier: "JNE Express", notes: "Jam kerja 09.00 - 17.00")
+        ]
+        saveRecipients()
     }
 
     // MARK: - Product CRUD

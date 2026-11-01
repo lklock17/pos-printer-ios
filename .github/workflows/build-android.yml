@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Compile & Package APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make Gradlew Executable
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Build Android APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --stacktrace || gradle assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
+          mkdir -p ../dist
+          find app/build/outputs/apk/ -name "*.apk" -exec cp {} ../dist/OmniPOS.apk \;
+          echo "=== APK FILE CREATED SUCCESSFULLY ==="
+          ls -lh ../dist/OmniPOS.apk
+
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmniPOS-Android-APK
+          path: dist/OmniPOS.apk
+          retention-days: 30
+
+      - name: Publish to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload latest dist/OmniPOS.apk --clobber || gh release create latest dist/OmniPOS.apk --title "OmniPOS & Thermal Suite (Latest)" --notes "OmniPOS Universal: Aplikasi Kasir POS & Cetak Label Pengiriman 4x6 / 58x40 mm untuk iOS & Android."

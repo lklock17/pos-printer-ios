@@ -21,6 +21,8 @@ struct CashierView: View {
     @State private var showSuccessModal: Bool = false
     @State private var showPrintReceiptConfirm: Bool = false
     @State private var showPrintLabelConfirm: Bool = false
+    @State private var showPrintStickerConfirm: Bool = false
+    @State private var showAddressBookSheet: Bool = false
     @State private var printStatusMsg: String = ""
     @State private var showPrintStatusAlert: Bool = false
 
@@ -122,6 +124,16 @@ struct CashierView: View {
             }
             .sheet(isPresented: $showShippingModal) {
                 shippingInputSheet
+            }
+            .sheet(isPresented: $showAddressBookSheet) {
+                AddressBookView { selected in
+                    shippingInfo.recipientName = selected.name
+                    shippingInfo.recipientPhone = selected.phone
+                    shippingInfo.recipientAddress = selected.address
+                    shippingInfo.postalCode = selected.postalCode
+                    shippingInfo.courier = selected.defaultCourier
+                    shippingInfo.notes = selected.notes
+                }
             }
             .sheet(isPresented: $showSuccessModal) {
                 successModalView
@@ -392,6 +404,22 @@ struct CashierView: View {
     private var shippingInputSheet: some View {
         NavigationView {
             Form {
+                Section {
+                    Button(action: { showAddressBookSheet = true }) {
+                        HStack {
+                            Image(systemName: "person.crop.rectangle.stack.fill")
+                                .foregroundColor(.blue)
+                            Text("Pilih dari Buku Alamat Tersimpan")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.blue)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+
                 Section(header: Text("Ekspedisi & Kurir")) {
                     Picker("Kurir", selection: $shippingInfo.courier) {
                         ForEach(["J&T Express", "JNE", "SiCepat", "Shopee Xpress", "GoSend", "GrabExpress", "Anteraja", "Lion Parcel"], id: \.self) {
@@ -439,8 +467,33 @@ struct CashierView: View {
                 Section(header: Text("Instruksi Pengiriman")) {
                     TextField("e.g. Fragile / Jangan Dibanting", text: $shippingInfo.notes)
                 }
+
+                Section {
+                    Button(action: {
+                        guard !shippingInfo.recipientName.isEmpty else { return }
+                        let saved = SavedRecipient(
+                            name: shippingInfo.recipientName,
+                            phone: shippingInfo.recipientPhone,
+                            address: shippingInfo.recipientAddress,
+                            postalCode: shippingInfo.postalCode,
+                            defaultCourier: shippingInfo.courier,
+                            notes: shippingInfo.notes
+                        )
+                        dataManager.saveOrUpdateRecipient(saved)
+                        printStatusMsg = "Alamat \(saved.name) berhasil disimpan ke Buku Alamat!"
+                        showPrintStatusAlert = true
+                    }) {
+                        HStack {
+                            Image(systemName: "square.and.arrow.down.fill")
+                                .foregroundColor(.green)
+                            Text("Simpan Penerima Ini ke Buku Alamat")
+                                .foregroundColor(.green)
+                        }
+                    }
+                    .disabled(shippingInfo.recipientName.isEmpty || shippingInfo.recipientAddress.isEmpty)
+                }
             }
-            .navigationTitle("Data Pengiriman 4x6")
+            .navigationTitle("Data Pengiriman Paket")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -591,6 +644,14 @@ struct CashierView: View {
 
                         if order.orderType == .shipping {
                             LiquidGlassButton(
+                                title: "Cetak Stiker 58x40 mm (TSPL)",
+                                icon: "tag.fill",
+                                tintColor: Color(red: 0.1, green: 0.7, blue: 0.3)
+                            ) {
+                                showPrintStickerConfirm = true
+                            }
+
+                            LiquidGlassButton(
                                 title: "Cetak Label Pengiriman 4x6",
                                 icon: "shippingbox.fill",
                                 tintColor: Color(red: 0.95, green: 0.45, blue: 0.05)
@@ -636,6 +697,16 @@ struct CashierView: View {
             }
         } message: {
             Text("Apakah Anda yakin ingin mencetak label resi 4x6 untuk \(lastCompletedOrder?.shippingInfo?.trackingNumber ?? "")?")
+        }
+        .alert("Konfirmasi Cetak Stiker 58x40", isPresented: $showPrintStickerConfirm) {
+            Button("Batal", role: .cancel) { }
+            Button("Ya, Cetak") {
+                if let ord = lastCompletedOrder {
+                    printShippingSticker58x40(ord)
+                }
+            }
+        } message: {
+            Text("Apakah Anda yakin ingin mencetak stiker thermal 58x40 mm untuk \(lastCompletedOrder?.shippingInfo?.recipientName ?? "")?")
         }
     }
 
@@ -715,6 +786,19 @@ struct CashierView: View {
         let data = PrinterEngine.buildTSPLLabelData(order: order, config: dataManager.storeConfig)
         btManager.sendData(data) { success in
             printStatusMsg = success ? "Label pengiriman 4x6 berhasil dikirim ke printer label!" : "Gagal mencetak label."
+            showPrintStatusAlert = true
+        }
+    }
+
+    private func printShippingSticker58x40(_ order: Order) {
+        guard btManager.isConnected else {
+            printStatusMsg = "Printer Bluetooth belum terhubung. Hubungkan printer di menu Pengaturan."
+            showPrintStatusAlert = true
+            return
+        }
+        let data = PrinterEngine.buildTSPLSticker58x40Data(order: order, config: dataManager.storeConfig)
+        btManager.sendData(data) { success in
+            printStatusMsg = success ? "Stiker thermal 58x40 mm berhasil dikirim ke printer!" : "Gagal mencetak stiker."
             showPrintStatusAlert = true
         }
     }

@@ -242,6 +242,140 @@ public class PrinterEngine {
         return tspl.data(using: .utf8) ?? Data()
     }
 
+    // MARK: - 3. Build Data Stiker Thermal 58x40 mm (TSPL Command untuk Printer Stiker Kecil / Tempel)
+    public static func buildTSPLSticker58x40Data(order: Order, config: StoreConfig) -> Data {
+        guard let ship = order.shippingInfo else { return Data() }
+
+        var tspl = ""
+        // Ukuran stiker 58mm x 40mm, 203 DPI (8 dots/mm) -> 464 x 320 dots, gap 2mm
+        tspl += "SIZE 58 mm, 40 mm\r\n"
+        tspl += "GAP 2 mm, 0 mm\r\n"
+        tspl += "DIRECTION 1\r\n"
+        tspl += "CLS\r\n"
+
+        // Border luar stiker
+        tspl += "BOX 10,10,454,310,2\r\n"
+
+        // Header: Kurir & Layanan
+        tspl += "TEXT 20,20,\"3\",0,1,1,\"\(ship.courier.uppercased())\"\r\n"
+        tspl += "TEXT 280,20,\"3\",0,1,1,\"[\(ship.service.prefix(8).uppercased())]\"\r\n"
+        tspl += "BOX 10,48,454,50,1\r\n"
+
+        // Barcode Nomor Resi (Code 128)
+        let tracking = ship.trackingNumber.isEmpty ? order.invoiceNumber : ship.trackingNumber
+        tspl += "BARCODE 25,58,\"128\",40,1,0,2,3,\"\(tracking)\"\r\n"
+        tspl += "TEXT 25,103,\"2\",0,1,1,\"RESI: \(tracking)\"\r\n"
+        tspl += "BOX 10,125,454,127,1\r\n"
+
+        // Penerima (Tujuan Utama Pengiriman)
+        tspl += "TEXT 20,135,\"3\",0,1,1,\"Kpd: \(String(ship.recipientName.prefix(22)))\"\r\n"
+        tspl += "TEXT 20,165,\"2\",0,1,1,\"Telp: \(ship.recipientPhone)\"\r\n"
+
+        // Potong alamat jadi 2 baris pendek agar pas di stiker 58x40
+        let rAddr = ship.recipientAddress
+        let line1 = String(rAddr.prefix(32))
+        let remaining = rAddr.count > 32 ? String(rAddr.dropFirst(32)) : ""
+        let line2 = String(remaining.prefix(32))
+
+        tspl += "TEXT 20,190,\"2\",0,1,1,\"\(line1)\"\r\n"
+        if !line2.isEmpty {
+            tspl += "TEXT 20,212,\"2\",0,1,1,\"\(line2)\"\r\n"
+        }
+        if !ship.postalCode.isEmpty {
+            tspl += "TEXT 20,235,\"2\",0,1,1,\"Pos: \(ship.postalCode)\"\r\n"
+        }
+
+        // Garis Pembatas Bawah
+        tspl += "BOX 10,260,454,262,1\r\n"
+
+        // Footer: COD Status & Pengirim
+        if ship.isCOD {
+            tspl += "TEXT 20,272,\"3\",0,1,1,\"COD: \(CurrencyHelper.format(ship.codAmount))\"\r\n"
+        } else {
+            tspl += "TEXT 20,272,\"3\",0,1,1,\"NON-COD\"\r\n"
+        }
+
+        let sName = ship.senderName.isEmpty ? config.defaultSenderName : ship.senderName
+        tspl += "TEXT 250,275,\"2\",0,1,1,\"Dr: \(String(sName.prefix(12)))\"\r\n"
+
+        tspl += "PRINT 1,1\r\n"
+        return tspl.data(using: .utf8) ?? Data()
+    }
+
+    // MARK: - 4. Build Slip Ekspedisi ESC/POS 58mm (Kertas Roll Thermal Standar)
+    public static func buildShippingSlip58Data(order: Order, config: StoreConfig) -> Data {
+        guard let ship = order.shippingInfo else { return Data() }
+        var data = Data()
+
+        let cmdInit: [UInt8] = [0x1B, 0x40]
+        let cmdAlignCenter: [UInt8] = [0x1B, 0x61, 0x01]
+        let cmdAlignLeft: [UInt8] = [0x1B, 0x61, 0x00]
+        let cmdBoldOn: [UInt8] = [0x1B, 0x45, 0x01]
+        let cmdBoldOff: [UInt8] = [0x1B, 0x45, 0x00]
+        let cmdDoubleHeight: [UInt8] = [0x1B, 0x21, 0x10]
+        let cmdNormalSize: [UInt8] = [0x1B, 0x21, 0x00]
+        let cmdAutoCut: [UInt8] = [0x1D, 0x56, 0x42, 0x00]
+
+        let width = 32
+        let divider = String(repeating: "-", count: width) + "\r\n"
+        let doubleDivider = String(repeating: "=", count: width) + "\r\n"
+
+        data.append(contentsOf: cmdInit)
+        data.append(contentsOf: cmdAlignCenter)
+        data.append(contentsOf: cmdBoldOn)
+        data.append(contentsOf: cmdDoubleHeight)
+        data.append(encodeString(ship.courier.uppercased() + "\r\n"))
+        data.append(contentsOf: cmdNormalSize)
+        data.append(encodeString("[\(ship.service.uppercased())]\r\n"))
+        data.append(contentsOf: cmdBoldOff)
+        data.append(encodeString(doubleDivider))
+
+        let tracking = ship.trackingNumber.isEmpty ? order.invoiceNumber : ship.trackingNumber
+        data.append(contentsOf: cmdBoldOn)
+        data.append(encodeString("NO RESI:\r\n\(tracking)\r\n"))
+        data.append(contentsOf: cmdBoldOff)
+        data.append(encodeString(divider))
+
+        data.append(contentsOf: cmdAlignLeft)
+        data.append(contentsOf: cmdBoldOn)
+        data.append(encodeString("PENERIMA / TUJUAN:\r\n"))
+        data.append(contentsOf: cmdBoldOff)
+        data.append(contentsOf: cmdBoldOn)
+        data.append(encodeString("\(ship.recipientName)\r\n"))
+        data.append(contentsOf: cmdBoldOff)
+        data.append(encodeString("Telp: \(ship.recipientPhone)\r\n"))
+        data.append(encodeString("Alamat:\r\n\(ship.recipientAddress)\r\n"))
+        if !ship.postalCode.isEmpty {
+            data.append(encodeString("Kode Pos: \(ship.postalCode)\r\n"))
+        }
+        data.append(encodeString(divider))
+
+        let sName = ship.senderName.isEmpty ? config.defaultSenderName : ship.senderName
+        let sPhone = ship.senderPhone.isEmpty ? config.defaultSenderPhone : ship.senderPhone
+        data.append(encodeString("PENGIRIM: \(sName) (\(sPhone))\r\n"))
+        data.append(encodeString(divider))
+
+        if ship.isCOD {
+            data.append(contentsOf: cmdAlignCenter)
+            data.append(contentsOf: cmdBoldOn)
+            data.append(encodeString("*** COD: \(CurrencyHelper.format(ship.codAmount)) ***\r\n"))
+            data.append(contentsOf: cmdBoldOff)
+        } else {
+            data.append(contentsOf: cmdAlignCenter)
+            data.append(encodeString("*** NON-COD ***\r\n"))
+        }
+
+        data.append(encodeString(divider))
+        data.append(encodeString("Dicetak via OmniPOS\r\n"))
+
+        // Feed & Cut
+        data.append(encodeString("\r\n\r\n\r\n\r\n"))
+        if config.isAutoCutEnabled {
+            data.append(contentsOf: cmdAutoCut)
+        }
+        return data
+    }
+
     private static func encodeString(_ text: String) -> Data {
         // Encoding GBK / ISO-8859-1 untuk thermal receipt
         let cfEncoding = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)

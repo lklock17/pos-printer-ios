@@ -76,6 +76,8 @@ struct OrderHistoryView: View {
                     reprintReceipt(order: order)
                 }, onReprintLabel: {
                     reprintLabel(order: order)
+                }, onReprintSticker: {
+                    reprintSticker(order: order)
                 })
             }
             .alert("Status Cetak", isPresented: $showPrintAlert) {
@@ -156,6 +158,19 @@ struct OrderHistoryView: View {
             showPrintAlert = true
         }
     }
+
+    private func reprintSticker(order: Order) {
+        guard btManager.isConnected else {
+            printAlertMessage = "Printer Bluetooth belum terhubung."
+            showPrintAlert = true
+            return
+        }
+        let data = PrinterEngine.buildTSPLSticker58x40Data(order: order, config: dataManager.storeConfig)
+        btManager.sendData(data) { success in
+            printAlertMessage = success ? "Stiker thermal 58x40 mm berhasil dicetak ulang!" : "Gagal mengirim data ke printer."
+            showPrintAlert = true
+        }
+    }
 }
 
 // Subview: Order Row
@@ -224,10 +239,12 @@ struct OrderDetailSheet: View {
     let order: Order
     var onReprintReceipt: () -> Void
     var onReprintLabel: () -> Void
+    var onReprintSticker: (() -> Void)? = nil
     @Environment(\.presentationMode) private var presentationMode
 
     @State private var showConfirmReceipt: Bool = false
     @State private var showConfirmLabel: Bool = false
+    @State private var showConfirmSticker: Bool = false
 
     var body: some View {
         NavigationView {
@@ -382,6 +399,16 @@ struct OrderDetailSheet: View {
                     }
 
                     if order.orderType == .shipping {
+                        Button(action: { showConfirmSticker = true }) {
+                            HStack {
+                                Image(systemName: "tag.fill")
+                                Text("Cetak Stiker 58x40 mm (TSPL)")
+                                    .bold()
+                            }
+                            .foregroundColor(.green)
+                            .frame(maxWidth: .infinity)
+                        }
+
                         Button(action: { showConfirmLabel = true }) {
                             HStack {
                                 Image(systemName: "shippingbox.fill")
@@ -418,6 +445,14 @@ struct OrderDetailSheet: View {
                 }
             } message: {
                 Text("Apakah Anda yakin ingin mencetak ulang label pengiriman 4x6 untuk resi \(order.shippingInfo?.trackingNumber ?? order.invoiceNumber)?")
+            }
+            .alert("Konfirmasi Cetak Stiker 58x40", isPresented: $showConfirmSticker) {
+                Button("Batal", role: .cancel) { }
+                Button("Ya, Cetak") {
+                    onReprintSticker?()
+                }
+            } message: {
+                Text("Apakah Anda yakin ingin mencetak ulang stiker thermal 58x40 mm untuk resi \(order.shippingInfo?.trackingNumber ?? order.invoiceNumber)?")
             }
         }
     }
