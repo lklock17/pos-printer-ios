@@ -461,36 +461,21 @@ public class PrinterEngine {
     ) -> Data {
         let width = 384
         let height = 264 // 264 dots = 33.0 mm (30mm stiker + 3mm gap)
-        let bytesPerRow = 48 // 384 dots / 8 = 48 bytes per row
+        let size = CGSize(width: width, height: height)
 
-        // Alokasikan memory RGBA 384 x 264 murni tanpa pengaruh skala Retina layar
-        let rgbaBytesPerRow = width * 4
-        var rgbaPixels = [UInt8](repeating: 255, count: width * height * 4)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-
-        guard let ctx = CGContext(
-            data: &rgbaPixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: rgbaBytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
+        // Gunakan UIGraphicsBeginImageContextWithOptions dengan scale 1.0 murni (384x264 dot)
+        // Menjamin orientasi 100% tegak lurus, tidak terbalik, tidak mirror, dan ukuran presisi
+        UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
+        guard let ctx = UIGraphicsGetCurrentContext() else {
+            UIGraphicsEndImageContext()
             return Data()
         }
 
-        // Setup koordinat: origin di (0,0) kiri-atas, Y bertambah ke bawah (0..264)
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: 1.0, y: -1.0)
-
-        UIGraphicsPushContext(ctx)
-
-        // Clear background putih
+        // 1. Bersihkan background putih
         ctx.setFillColor(UIColor.white.cgColor)
-        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.fill(CGRect(origin: .zero, size: size))
 
-        // 1. Nama Toko (y=14)
+        // 2. Nama Toko (y=14)
         let storeUpper = (storeName.isEmpty ? "OMNIPOS STORE" : storeName).uppercased()
         let storeFont = UIFont.boldSystemFont(ofSize: 15)
         let storeAttrs: [NSAttributedString.Key: Any] = [
@@ -508,7 +493,7 @@ public class PrinterEngine {
         ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 34))
         ctx.strokePath()
 
-        // 2. Nama Produk (y=38)
+        // 3. Nama Produk (y=38)
         let dispName = String(productName.prefix(24))
         let prodFont = UIFont.boldSystemFont(ofSize: 18)
         let prodAttrs: [NSAttributedString.Key: Any] = [
@@ -519,7 +504,7 @@ public class PrinterEngine {
         let prodRect = CGRect(x: (CGFloat(width) - prodSize.width) / 2, y: 38, width: prodSize.width, height: prodSize.height)
         dispName.draw(in: prodRect, withAttributes: prodAttrs)
 
-        // 3. Barcode Code 128 (y=64, h=44)
+        // 4. Barcode Code 128 (y=64, h=44)
         let cleanBc = barcode.filter { $0.asciiValue != nil && $0.asciiValue! >= 32 && $0.asciiValue! <= 126 }
         let finalBc = cleanBc.isEmpty ? "00000000" : cleanBc
         var codes: [Int] = [104] // Start B
@@ -561,7 +546,7 @@ public class PrinterEngine {
             curX += w
         }
 
-        // 4. Barcode Teks (y=112)
+        // 5. Barcode Teks (y=112)
         let codeFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
         let codeAttrs: [NSAttributedString.Key: Any] = [
             .font: codeFont,
@@ -578,7 +563,7 @@ public class PrinterEngine {
         ctx.addLine(to: CGPoint(x: CGFloat(width) - 10, y: 132))
         ctx.strokePath()
 
-        // 5. Price Box (y=138 s/d 204, height=66)
+        // 6. Price Box (y=138 s/d 204, height=66)
         let boxRect = CGRect(x: 14, y: 138, width: CGFloat(width) - 28, height: 66)
         ctx.setStrokeColor(UIColor.black.cgColor)
         ctx.setLineWidth(2)
@@ -599,14 +584,16 @@ public class PrinterEngine {
         )
         priceStr.draw(in: priceRect, withAttributes: priceAttrs)
 
-        // y=205..264 adalah margin bawah stiker dan gap fisik 3mm
+        // Ambil hasil render UIKit yang sudah dipastikan 100% tegak lurus
+        guard let renderedImage = UIGraphicsGetImageFromCurrentImageContext(),
+              let cgImage = renderedImage.cgImage else {
+            UIGraphicsEndImageContext()
+            return Data()
+        }
+        UIGraphicsEndImageContext()
 
-        UIGraphicsPopContext()
-
-        // Buat Data ESC/POS Raster (GS v 0)
-        // Header: 1D 76 30 00 xL xH yL yH
-        // xL = 48 (0x30), xH = 0
-        // yL = 8 (0x08), yH = 1 (0x01) -> 264 dots
+        // Ekstraksi 1-bit ESC/POS Raster (GS v 0) langsung dari pixel CGImage
+        let bytesPerRow = 48
         var rasterData = Data()
         let xL = UInt8(bytesPerRow & 0xFF)
         let xH = UInt8((bytesPerRow >> 8) & 0xFF)
@@ -614,20 +601,26 @@ public class PrinterEngine {
         let yH = UInt8((height >> 8) & 0xFF)
         rasterData.append(contentsOf: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
 
-        // Ekstraksi 1-bit per pixel dari baris 0 sampai baris 263
-        // Karena transform translateBy(0, height) & scaleBy(1, -1),
-        // baris atas visual (y=0) tersimpan di y_cg = (height - 1)
+        guard let dataProvider = cgImage.dataProvider,
+              let cfData = dataProvider.data,
+              let rawPtr = CFDataGetBytePtr(cfData) else {
+            return rasterData
+        }
+
+        let cgBytesPerRow = cgImage.bytesPerRow
+        let bytesPerPixel = max(1, cgImage.bitsPerPixel / 8)
+
         for y in 0..<height {
-            let yCg = (height - 1) - y
+            let rowOffset = y * cgBytesPerRow
             for byteIdx in 0..<bytesPerRow {
                 var b: UInt8 = 0
                 for bit in 0..<8 {
                     let x = byteIdx * 8 + bit
                     if x < width {
-                        let offset = (yCg * width + x) * 4
-                        let r = Int(rgbaPixels[offset])
-                        let g = Int(rgbaPixels[offset + 1])
-                        let bCol = Int(rgbaPixels[offset + 2])
+                        let pixelOffset = rowOffset + x * bytesPerPixel
+                        let r = Int(rawPtr[pixelOffset])
+                        let g = Int(rawPtr[pixelOffset + 1])
+                        let bCol = Int(rawPtr[pixelOffset + 2])
                         let gray = (r * 299 + g * 587 + bCol * 114) / 1000
                         if gray < 128 {
                             b |= (1 << (7 - bit))

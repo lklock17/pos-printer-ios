@@ -1,10 +1,12 @@
 package com.lklock17.omnipos.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -13,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,8 +26,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lklock17.omnipos.models.*
@@ -34,6 +42,7 @@ import com.lklock17.omnipos.services.PrinterEngine
 import com.lklock17.omnipos.ui.components.LiquidGlassBackground
 import com.lklock17.omnipos.ui.components.LiquidGlassButton
 import com.lklock17.omnipos.ui.components.LiquidGlassCard
+import com.lklock17.omnipos.utils.ImageHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,8 +70,11 @@ fun CashierScreen() {
 
     val filteredProducts = remember(selectedCategory, searchQuery, DataManager.products.size) {
         DataManager.products.filter { p ->
-            val matchCat = (selectedCategory == "Semua" || p.category == selectedCategory)
-            val matchQuery = searchQuery.isBlank() || p.name.contains(searchQuery, ignoreCase = true) || p.barcode.contains(searchQuery)
+            val matchCat = (selectedCategory == "Semua" || p.category.equals(selectedCategory, ignoreCase = true))
+            val matchQuery = searchQuery.isBlank() ||
+                p.name.contains(searchQuery, ignoreCase = true) ||
+                p.barcode.contains(searchQuery) ||
+                p.sku.contains(searchQuery, ignoreCase = true)
             matchCat && matchQuery
         }
     }
@@ -73,16 +85,29 @@ fun CashierScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Kasir OmniPOS", fontWeight = FontWeight.Bold, color = Color.White) },
+                title = {
+                    Column {
+                        Text("Kasir OmniPOS", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
+                        val storeName = DataManager.storeConfig.value.storeName.ifEmpty { "Toko Utama" }
+                        Text(storeName, color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                },
+                actions = {
+                    if (cart.isNotEmpty()) {
+                        IconButton(onClick = { cart.clear() }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Kosongkan", tint = Color(0xFFEF4444))
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0x330F1424))
             )
         },
-        containerColor = Color(0xFF0F1424)
+        containerColor = Color(0xFF0A0E1A)
     ) { padding ->
         LiquidGlassBackground(modifier = Modifier.padding(padding)) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Compact iOS-Style Search Bar (Height 42dp) with Integrated Camera Barcode Scanner
+                    // 1. Search Bar Compact & Barcode Camera Scanner (Height 42dp)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -90,7 +115,7 @@ fun CashierScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Sleek Compact Search Field (42dp height)
+                        // Search Box (42dp height)
                         Row(
                             modifier = Modifier
                                 .weight(1f)
@@ -111,7 +136,7 @@ fun CashierScreen() {
                             Box(modifier = Modifier.weight(1f)) {
                                 if (searchQuery.isEmpty()) {
                                     Text(
-                                        text = "Cari / scan barcode...",
+                                        text = "Cari produk / ketik barcode...",
                                         color = Color.Gray,
                                         fontSize = 13.sp
                                     )
@@ -148,34 +173,31 @@ fun CashierScreen() {
                                 )
                             }
                             if (searchQuery.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0x33FFFFFF))
-                                        .clickable { searchQuery = "" },
-                                    contentAlignment = Alignment.Center
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Hapus",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
                         }
 
-                        // Compact Camera Barcode Scanner Button (42dp, Matching iOS)
+                        // Tombol Camera Barcode Scanner (42dp height)
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        colors = listOf(Color(0xFF2563EB), Color(0xFF06B6D4))
+                                        colors = listOf(Color(0xFF0284C7), Color(0xFF06B6D4))
                                     )
                                 )
+                                .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(12.dp))
                                 .clickable {
                                     try {
                                         val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
@@ -222,7 +244,7 @@ fun CashierScreen() {
                         }
                     }
 
-                    // Category Chips (Identik dengan iOS Capsule Gradient)
+                    // 2. Category Chips Horizontal
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -256,7 +278,7 @@ fun CashierScreen() {
                         }
                     }
 
-                    // Products Grid
+                    // 3. Products Grid (2 Columns)
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -267,8 +289,10 @@ fun CashierScreen() {
                             .padding(bottom = if (cartCount > 0) 80.dp else 0.dp)
                     ) {
                         items(filteredProducts, key = { it.id }) { product ->
+                            val inCartItem = cart.firstOrNull { it.product.id == product.id }
                             ProductItemCard(
                                 product = product,
+                                cartItemQuantity = inCartItem?.quantity ?: 0,
                                 onAddToCart = {
                                     val idx = cart.indexOfFirst { it.product.id == product.id }
                                     if (idx != -1) {
@@ -283,7 +307,7 @@ fun CashierScreen() {
                     }
                 }
 
-                // Floating Bottom Cart Bar (Identik dengan iOS Floating Pill)
+                // 4. Floating Bottom Cart Bar
                 if (cartCount > 0) {
                     val cartGradient = Brush.horizontalGradient(
                         colors = listOf(Color(0xFF1D4ED8), Color(0xFF06B6D4))
@@ -326,12 +350,16 @@ fun CashierScreen() {
                                 )
                             }
 
-                            Text(
-                                text = Order.formatRupiah(cartTotal),
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = Order.formatRupiah(cartTotal),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -339,7 +367,7 @@ fun CashierScreen() {
         }
     }
 
-    // Cart & Checkout Bottom Sheet
+    // 5. Cart & Checkout Bottom Sheet
     if (showCartSheet) {
         ModalBottomSheet(
             onDismissRequest = { showCartSheet = false },
@@ -352,7 +380,52 @@ fun CashierScreen() {
                     .padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("Keranjang Belanja", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                // Header Sheet
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Keranjang Belanja ($cartCount)", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    TextButton(onClick = { cart.clear(); showCartSheet = false }) {
+                        Text("Kosongkan", color = Color(0xFFEF4444), fontSize = 13.sp)
+                    }
+                }
+
+                // Daftar Item di Keranjang (Scrollable)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(cart, key = { it.product.id }) { item ->
+                        CartItemRow(
+                            item = item,
+                            onIncrease = {
+                                val idx = cart.indexOfFirst { it.product.id == item.product.id }
+                                if (idx != -1) {
+                                    cart[idx] = item.copy(quantity = item.quantity + 1)
+                                }
+                            },
+                            onDecrease = {
+                                val idx = cart.indexOfFirst { it.product.id == item.product.id }
+                                if (idx != -1) {
+                                    if (item.quantity > 1) {
+                                        cart[idx] = item.copy(quantity = item.quantity - 1)
+                                    } else {
+                                        cart.removeAt(idx)
+                                    }
+                                }
+                            },
+                            onRemove = {
+                                cart.removeAll { it.product.id == item.product.id }
+                            }
+                        )
+                    }
+                }
+
+                Divider(color = Color(0x22FFFFFF))
 
                 // Order Type Selector
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -372,7 +445,7 @@ fun CashierScreen() {
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 modifier = Modifier.padding(vertical = 8.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -431,21 +504,73 @@ fun CashierScreen() {
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 modifier = Modifier.padding(vertical = 6.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
                 }
 
-                // Cash Amount Input
+                // Cash Amount Input & Quick Cash Buttons
                 if (paymentMethod == PaymentMethod.CASH) {
                     OutlinedTextField(
                         value = cashGivenText,
-                        onValueChange = { cashGivenText = it },
+                        onValueChange = { cashGivenText = it.filter { ch -> ch.isDigit() } },
                         label = { Text("Uang Tunai Diterima (Rp)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    // Quick Cash Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { cashGivenText = cartTotal.toLong().toString() },
+                            color = Color(0x2210B981),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Uang Pas", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981), modifier = Modifier.padding(vertical = 6.dp), textAlign = TextAlign.Center)
+                        }
+
+                        listOf(10000, 20000, 50000, 100000).forEach { addNom ->
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val cur = cashGivenText.toDoubleOrNull() ?: cartTotal
+                                        cashGivenText = (cur + addNom).toLong().toString()
+                                    },
+                                color = Color(0x1AFFFFFF),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("+${addNom / 1000}rb", fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(vertical = 6.dp), textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
+
+                    val givenAmount = cashGivenText.toDoubleOrNull() ?: cartTotal
+                    val change = maxOf(0.0, givenAmount - cartTotal)
+                    if (change > 0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Kembalian:", fontSize = 13.sp, color = Color.Gray)
+                            Text(
+                                text = Order.formatRupiah(change),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
+                        }
+                    }
                 }
 
                 // Complete Order Button
@@ -518,51 +643,45 @@ fun CashierScreen() {
                                 showPrintShippingConfirm = true
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
-                        ) {
-                            Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cetak Stiker 58x40 mm (TSPL)")
-                        }
-
-                        // 3. Print 4x6 Label Button
-                        Button(
-                            onClick = {
-                                printTargetFormat = LabelPrintFormat.LABEL_4X6
-                                showPrintShippingConfirm = true
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488))
                         ) {
                             Icon(Icons.Default.LocalShipping, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cetak Label 4x6 Thermal (TSPL)")
+                            Text("Cetak Stiker Paket 58x40 (TSPL)")
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showSuccessDialog = false }) {
+                Button(onClick = { showSuccessDialog = false }) {
                     Text("Selesai")
                 }
             }
         )
     }
 
-    // Anti-Accidental Print Struk Confirmation
+    // Dialog Konfirmasi Cetak Struk Kasir
     if (showPrintReceiptConfirm && lastCompletedOrder != null) {
+        val completed = lastCompletedOrder!!
         AlertDialog(
             onDismissRequest = { showPrintReceiptConfirm = false },
             title = { Text("Konfirmasi Cetak Struk") },
-            text = { Text("Apakah Anda yakin ingin mencetak struk nota ${lastCompletedOrder?.invoiceNumber}?") },
+            text = { Text("Yakin ingin mencetak struk kasir untuk nota ${completed.invoiceNumber}?") },
             confirmButton = {
-                Button(onClick = {
-                    showPrintReceiptConfirm = false
-                    val data = PrinterEngine.buildReceiptData(lastCompletedOrder!!, DataManager.storeConfig.value)
-                    BluetoothPrinterManager.sendData(data) { ok, err ->
-                        Toast.makeText(context, if (ok) "Struk berhasil dicetak!" else err ?: "Gagal.", Toast.LENGTH_SHORT).show()
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        val payload = PrinterEngine.buildReceiptData(completed, DataManager.storeConfig.value)
+                        BluetoothPrinterManager.sendData(payload) { success, err ->
+                            if (success) {
+                                Toast.makeText(context, "Struk kasir berhasil dicetak!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Gagal mencetak struk: $err", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        showPrintReceiptConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
                     Text("Ya, Cetak")
                 }
             },
@@ -572,58 +691,34 @@ fun CashierScreen() {
         )
     }
 
-    // Anti-Accidental Print Shipping Label / Sticker Confirmation
-    if (showPrintShippingConfirm && lastCompletedOrder != null && printTargetFormat != null) {
-        val fmt = printTargetFormat!!
-        val ship = lastCompletedOrder?.shippingInfo
+    // Dialog Konfirmasi Cetak Label Paket
+    if (showPrintShippingConfirm && lastCompletedOrder != null) {
+        val completed = lastCompletedOrder!!
         AlertDialog(
             onDismissRequest = { showPrintShippingConfirm = false },
-            title = { Text("Konfirmasi Cetak ${fmt.title}") },
-            text = {
-                Text(
-                    "Cetak ${fmt.title} ke printer thermal?\n\n" +
-                    "• Penerima: ${ship?.recipientName}\n" +
-                    "• Kurir: ${ship?.courier}\n" +
-                    "• Resi: ${ship?.trackingNumber}"
-                )
-            },
+            title = { Text("Konfirmasi Cetak Label Paket") },
+            text = { Text("Yakin ingin mencetak label paket stiker 58x40 untuk nota ${completed.invoiceNumber}?") },
             confirmButton = {
-                Button(onClick = {
-                    showPrintShippingConfirm = false
-                    val data = when (fmt) {
-                        LabelPrintFormat.STICKER_55X30 -> PrinterEngine.buildTSPLSticker55x30Data(lastCompletedOrder!!, DataManager.storeConfig.value)
-                        LabelPrintFormat.STICKER_58X40 -> PrinterEngine.buildTSPLSticker58x40Data(lastCompletedOrder!!, DataManager.storeConfig.value)
-                        LabelPrintFormat.LABEL_4X6 -> PrinterEngine.buildTSPLLabelData(lastCompletedOrder!!, DataManager.storeConfig.value)
-                        LabelPrintFormat.SLIP_58 -> PrinterEngine.buildShippingSlip58Data(lastCompletedOrder!!, DataManager.storeConfig.value)
-                    }
-                    BluetoothPrinterManager.sendData(data) { ok, err ->
-                        Toast.makeText(context, if (ok) "${fmt.title} berhasil dicetak!" else err ?: "Gagal.", Toast.LENGTH_SHORT).show()
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        val payload = PrinterEngine.buildTSPLSticker58x40Data(completed, DataManager.storeConfig.value)
+                        BluetoothPrinterManager.sendData(payload) { success, err ->
+                            if (success) {
+                                Toast.makeText(context, "Label paket stiker berhasil dicetak!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Gagal mencetak: $err", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        showPrintShippingConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
                     Text("Ya, Cetak")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showPrintShippingConfirm = false }) { Text("Batal") }
             }
-        )
-    }
-
-    // Address Book Sheet Selection
-    if (showAddressBookSheet) {
-        AddressBookScreen(
-            onSelectRecipient = { rec ->
-                shippingInfo = shippingInfo.copy(
-                    recipientName = rec.name,
-                    recipientPhone = rec.phone,
-                    recipientAddress = rec.address,
-                    postalCode = rec.postalCode,
-                    courier = rec.defaultCourier,
-                    notes = rec.notes
-                )
-                showAddressBookSheet = false
-            },
-            onClose = { showAddressBookSheet = false }
         )
     }
 
@@ -641,52 +736,198 @@ fun CashierScreen() {
 }
 
 @Composable
+private fun CartItemRow(
+    item: OrderItem,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val bitmap = remember(item.product.imageBase64) { ImageHelper.decodeBase64ToBitmap(item.product.imageBase64) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0x14FFFFFF),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail
+            Surface(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                color = Color(0x2EFFFFFF)
+            ) {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = item.product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = categoryIcon(item.product.category),
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Nama & Harga
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.product.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "@${Order.formatRupiah(item.product.price)} / ${item.product.unit}",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+                Text(
+                    text = Order.formatRupiah(item.subtotal),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF10B981)
+                )
+            }
+
+            // Stepper Quantity
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x28FFFFFF))
+                        .clickable(onClick = onDecrease),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "-1", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
+
+                Text(
+                    text = "${item.quantity}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF2563EB))
+                        .clickable(onClick = onIncrease),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "+1", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProductItemCard(
     product: Product,
+    cartItemQuantity: Int = 0,
     onAddToCart: () -> Unit
 ) {
+    val bitmap = remember(product.imageBase64) { ImageHelper.decodeBase64ToBitmap(product.imageBase64) }
+
     LiquidGlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onAddToCart),
+            .clickable(enabled = !product.isOutOfStock, onClick = onAddToCart),
         cornerRadius = 16.dp
     ) {
-        // Visual Header / Banner matching iOS
+        // Visual Header / Banner (Photo or Gradient Icon)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(105.dp)
+                .height(110.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(Color(0x383B82F6), Color(0x288B5CF6))
-                    )
-                )
+                .background(Color(0x24FFFFFF))
         ) {
-            Icon(
-                imageVector = categoryIcon(product.category),
-                contentDescription = null,
-                tint = Color(0xFF38BDF8).copy(alpha = 0.85f),
-                modifier = Modifier
-                    .size(42.dp)
-                    .align(Alignment.Center)
-            )
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = product.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(Color(0x383B82F6), Color(0x288B5CF6))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = categoryIcon(product.category),
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8).copy(alpha = 0.85f),
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+            }
 
             // Stock Pill Badge in Top-Right
+            val stockColor = when {
+                product.isOutOfStock -> Color(0xFFEF4444)
+                product.isLowStock -> Color(0xFFF59E0B)
+                else -> Color(0xFF10B981)
+            }
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(6.dp),
-                color = if (product.isLowStock) Color(0xDDEF4444) else Color(0xB2000000),
+                color = stockColor.copy(alpha = 0.9f),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text = "Stok: ${product.stock}",
+                    text = if (product.isOutOfStock) "Habis" else "${product.stock} ${product.unit}",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                 )
+            }
+
+            // Cart Quantity Indicator in Top-Left (if in cart)
+            if (cartItemQuantity > 0) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                    color = Color(0xFF2563EB),
+                    shape = CircleShape
+                ) {
+                    Text(
+                        text = "${cartItemQuantity}x",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
 
@@ -722,19 +963,19 @@ private fun ProductItemCard(
                 text = Order.formatRupiah(product.price),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF38BDF8)
+                color = if (product.isOutOfStock) Color.Gray else Color(0xFF38BDF8)
             )
 
             Surface(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape),
-                color = Color(0xFF2563EB)
+                color = if (product.isOutOfStock) Color(0x33FFFFFF) else Color(0xFF2563EB)
             ) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = "Tambah",
-                    tint = Color.White,
+                    tint = if (product.isOutOfStock) Color.Gray else Color.White,
                     modifier = Modifier.padding(4.dp)
                 )
             }
@@ -753,4 +994,3 @@ private fun categoryIcon(category: String): androidx.compose.ui.graphics.vector.
         else -> Icons.Default.Inventory2
     }
 }
-

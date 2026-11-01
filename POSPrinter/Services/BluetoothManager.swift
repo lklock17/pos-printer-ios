@@ -283,7 +283,7 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     func sendBatchLabels(
         labels: [Data],
         tearOffRaster: Data? = nil,
-        interLabelDelay: TimeInterval = 1.3,
+        interLabelDelay: TimeInterval = 0.8,
         onProgress: ((Int, Int) -> Void)? = nil,
         completion: ((Bool, String?) -> Void)? = nil
     ) {
@@ -296,16 +296,17 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
 
         let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-        let chunkSize = 120
+        let maxChunk = min(180, peripheral.maximumWriteValueLength(for: writeType))
+        let chunkSize = max(60, maxChunk)
         let total = labels.count
 
         DispatchQueue.global(qos: .userInitiated).async {
             // 1. Reset command 1x di awal
             let initCmd = Data([0x1B, 0x40])
             peripheral.writeValue(initCmd, for: char, type: writeType)
-            Thread.sleep(forTimeInterval: 0.1)
+            Thread.sleep(forTimeInterval: 0.05)
 
-            // 2. Kirim tiap label berurutan dengan jeda fisik motor
+            // 2. Kirim tiap label berurutan dengan streaming cepat (3ms) agar cetakan mulus lancar
             for (idx, labelData) in labels.enumerated() {
                 DispatchQueue.main.async {
                     onProgress?(idx + 1, total)
@@ -317,10 +318,10 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
                     let chunk = labelData.subdata(in: offset..<(offset + thisChunkSize))
                     peripheral.writeValue(chunk, for: char, type: writeType)
                     offset += thisChunkSize
-                    Thread.sleep(forTimeInterval: 0.03)
+                    Thread.sleep(forTimeInterval: 0.003) // 3ms jeda mikro agar printer tidak tersendat-sendat
                 }
 
-                // Jeda fisik motor printer membakar dan melangkah maju per label
+                // Jeda fisik motor printer melangkah maju antar stiker
                 Thread.sleep(forTimeInterval: interLabelDelay)
             }
 
@@ -332,9 +333,9 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
                     let chunk = tearOff.subdata(in: offset..<(offset + thisChunkSize))
                     peripheral.writeValue(chunk, for: char, type: writeType)
                     offset += thisChunkSize
-                    Thread.sleep(forTimeInterval: 0.03)
+                    Thread.sleep(forTimeInterval: 0.003)
                 }
-                Thread.sleep(forTimeInterval: 1.0)
+                Thread.sleep(forTimeInterval: 0.5)
             }
 
             DispatchQueue.main.async {

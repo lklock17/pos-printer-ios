@@ -14,10 +14,20 @@ data class Product(
     var category: String = "Semua",
     var unit: String = "pcs",
     var imageBase64: String? = null,
+    var notes: String? = null,
     var isFavorite: Boolean = false
 ) {
     val isLowStock: Boolean
         get() = stock <= minStockAlert
+
+    val isOutOfStock: Boolean
+        get() = stock <= 0
+
+    val profitNominal: Double
+        get() = maxOf(0.0, price - costPrice)
+
+    val profitMarginPercentage: Double
+        get() = if (price > 0) (profitNominal / price) * 100.0 else 0.0
 }
 
 object BarcodeHelper {
@@ -37,5 +47,3 @@ object BarcodeHelper {
         return "PRD-$randomNum"
     }
 }
-
-
