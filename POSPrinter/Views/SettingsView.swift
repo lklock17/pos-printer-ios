@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var bluetooth = BluetoothManager.shared
     @State private var config = ReceiptConfig.load()
+    @AppStorage("AutoDisconnect_Key") private var autoDisconnect = true
     @State private var showSavedAlert = false
 
     var body: some View {
@@ -33,6 +34,7 @@ struct SettingsView: View {
 
                 Section(header: Text("Konfigurasi Mesin Kasir")) {
                     Toggle("Aktifkan Auto-Cut (Pemotong)", isOn: $config.isAutoCutEnabled)
+                    Toggle("Auto-Putus Bluetooth setelah Print (Agar bisa gantian dengan PC)", isOn: $autoDisconnect)
                     Picker("Lebar Kertas", selection: $config.paperWidth) {
                         Text("58mm (32 Karakter)").tag(32)
                         Text("80mm (48 Karakter)").tag(48)

@@ -153,6 +153,15 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             DispatchQueue.main.async {
                 self.statusMessage = "Data cetak dan auto-cut terkirim!"
                 completion?(true)
+
+                // Jeda 2.5 detik lalu lepas koneksi agar komputer Windows bisa langsung mencetak
+                let autoDisconnect = UserDefaults.standard.object(forKey: "AutoDisconnect_Key") == nil ? true : UserDefaults.standard.bool(forKey: "AutoDisconnect_Key")
+                if autoDisconnect {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        self.disconnect()
+                        self.statusMessage = "Bluetooth dilepas otomatis (Komputer & iOS siap cetak)"
+                    }
+                }
             }
         }
     }
