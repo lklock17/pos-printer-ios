@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import com.lklock17.omnipos.models.Order
 import com.lklock17.omnipos.models.OrderType
 import com.lklock17.omnipos.models.Product
+import com.lklock17.omnipos.models.ShippingInfo
 import com.lklock17.omnipos.models.StoreConfig
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
