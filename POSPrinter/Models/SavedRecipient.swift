@@ -28,3 +28,4 @@ public struct SavedRecipient: Identifiable, Codable, Equatable {
         self.lastUsed = lastUsed
     }
 }
+

@@ -14,3 +14,4 @@ data class StoreConfig(
     var isTaxEnabled: Boolean = false,
     var taxRatePercent: Double = 11.0
 )
+

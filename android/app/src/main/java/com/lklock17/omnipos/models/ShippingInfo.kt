@@ -16,3 +16,4 @@ data class ShippingInfo(
     var codAmount: Double = 0.0,
     var notes: String = ""
 )
+

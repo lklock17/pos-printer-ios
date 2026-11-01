@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "OmniPOS"
 include(":app")
+

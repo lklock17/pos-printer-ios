@@ -12,3 +12,4 @@ data class SavedRecipient(
     var notes: String = "",
     var lastUsed: Long = System.currentTimeMillis()
 )
+

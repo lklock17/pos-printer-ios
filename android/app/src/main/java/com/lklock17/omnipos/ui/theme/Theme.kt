@@ -24,3 +24,4 @@ fun OmniPOSTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
+

@@ -25,15 +25,13 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      - name: Make Gradlew Executable
-        working-directory: android
-        run: chmod +x gradlew
+        with:
+          gradle-version: '8.5'
 
       - name: Build Android APK
         working-directory: android
         run: |
-          ./gradlew assembleRelease --stacktrace || gradle assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
+          gradle assembleRelease --stacktrace
           mkdir -p ../dist
           find app/build/outputs/apk/ -name "*.apk" -exec cp {} ../dist/OmniPOS.apk \;
           echo "=== APK FILE CREATED SUCCESSFULLY ==="

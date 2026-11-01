@@ -19,3 +19,4 @@ data class Product(
     val isLowStock: Boolean
         get() = stock <= minStockAlert
 }
+
